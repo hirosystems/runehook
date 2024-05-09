@@ -1,0 +1,23 @@
+[package]
+name = "runehook"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+chainhook-sdk = { version = "=0.12.9", features = ["zeromq"] }
+lru = "0.12.3"
+ordinals = "0.0.8"
+rusqlite = { version = "0.28.0", features = ["bundled"] }
+serde = "1"
+serde_derive = "1"
+hex = "0.4.3"
+rand = "0.8.5"
+hiro-system-kit = "0.3.1"
+toml = { version = "0.5.11", features = ["preserve_order"] }
+ctrlc = { version = "3.2.2", optional = true }
+reqwest = { version = "0.11", features = ["stream", "json"] }
+crossbeam-channel = "0.5.8"
+clap = { version = "4.3.2", features = ["derive"] }
+clap_generate = { version = "3.0.3" }
