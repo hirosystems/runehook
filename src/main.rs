@@ -9,7 +9,6 @@ extern crate serde;
 pub mod cli;
 pub mod config;
 pub mod service;
-pub mod utils;
 
 fn main() {
     cli::main();
