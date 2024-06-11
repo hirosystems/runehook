@@ -33,11 +33,9 @@ impl Config {
 
     pub fn from_config_file(config_file: ConfigFile) -> Result<Config, String> {
         let event_observer =
-            EventObserverConfig::new_using_overrides(config_file.event_observer.as_ref())?;
+            EventObserverConfig::new_using_overrides(config_file.network.as_ref())?;
 
-        let config = Config {
-            event_observer,
-        };
+        let config = Config { event_observer };
         Ok(config)
     }
 }

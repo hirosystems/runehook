@@ -60,7 +60,7 @@ struct NewConfig {
 #[derive(Subcommand, PartialEq, Clone, Debug)]
 #[clap(bin_name = "service")]
 enum ServiceCommand {
-    /// Run a service 
+    /// Run a service
     #[clap(name = "start", bin_name = "start")]
     Start(StartCommand),
 }

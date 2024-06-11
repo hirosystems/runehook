@@ -1,6 +1,78 @@
-use chainhook_sdk::observer::EventObserverConfigOverrides;
+use std::{
+    fs::File,
+    io::{BufReader, Read},
+};
+
+use chainhook_sdk::{observer::EventObserverConfigOverrides, types::BitcoinNetwork};
+
+use super::Config;
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct ConfigFile {
-    pub event_observer: Option<EventObserverConfigOverrides>,
+    pub network: Option<EventObserverConfigOverrides>,
 }
+
+impl ConfigFile {
+    pub fn from_file_path(file_path: &str) -> Result<ConfigFile, String> {
+        unimplemented!()
+    }
+
+    pub fn from_config_file(config_file: ConfigFile) -> Result<Config, String> {
+        unimplemented!()
+    }
+
+    pub fn default(
+        devnet: bool,
+        testnet: bool,
+        mainnet: bool,
+        config_path: &Option<String>,
+    ) -> Result<Config, String> {
+        unimplemented!()
+    }
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct LogConfigFile {
+    pub runes_internals: Option<bool>,
+    pub chainhook_internals: Option<bool>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct StorageConfigFile {
+    pub working_dir: Option<String>,
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct PredicatesApiConfigFile {
+    pub http_port: Option<u16>,
+    pub database_uri: Option<String>,
+    pub display_logs: Option<bool>,
+    pub disabled: Option<bool>,
+}
+
+// #[derive(Deserialize, Debug, Clone)]
+// pub struct SnapshotConfigFile {
+//     pub download_url: Option<String>,
+// }
+
+// #[derive(Deserialize, Debug, Clone)]
+// pub struct ResourcesConfigFile {
+//     pub ulimit: Option<usize>,
+//     pub cpu_core_available: Option<usize>,
+//     pub memory_available: Option<usize>,
+//     pub bitcoind_rpc_threads: Option<usize>,
+//     pub bitcoind_rpc_timeout: Option<u32>,
+//     pub expected_observers_count: Option<usize>,
+//     pub brc20_lru_cache_size: Option<usize>,
+// }
+
+// #[derive(Deserialize, Debug, Clone)]
+// pub struct NetworkConfigFile {
+//     pub mode: String,
+//     pub bitcoind_rpc_url: String,
+//     pub bitcoind_rpc_username: String,
+//     pub bitcoind_rpc_password: String,
+//     pub bitcoind_zmq_url: Option<String>,
+//     pub stacks_node_rpc_url: Option<String>,
+//     pub stacks_events_ingestion_port: Option<u16>,
+// }

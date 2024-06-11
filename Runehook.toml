@@ -17,4 +17,4 @@ bitcoind_zmq_url = "tcp://0.0.0.0:18543"
 
 [logs]
 runes_internals = true
-chainhook_internals = true
+chainhook_internals = false

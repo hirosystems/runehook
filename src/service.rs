@@ -47,6 +47,11 @@ pub fn start_service(config: &Config, ctx: &Context) -> Result<(), String> {
     let context_cloned = ctx.clone();
     let config_cloned = config.clone();
 
+    info!(
+        ctx.expect_logger(),
+        "Listening for new blocks",
+    );
+
     loop {
         let event = match observer_event_rx.recv() {
             Ok(cmd) => cmd,
