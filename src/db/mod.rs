@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use chainhook_sdk::utils::Context;
-use ordinals::{Etching, SpacedRune, Terms};
+use ordinals::{Edict, Etching, SpacedRune, Terms};
 use postgres::{Client, Error, NoTls};
 
 pub fn init_db(ctx: &Context) -> Result<Client, Error> {
@@ -27,6 +27,16 @@ pub fn init_db(ctx: &Context) -> Result<Client, Error> {
             turbo                   BOOLEAN NOT NULL,
             minted                  NUMERIC NOT NULL DEFAULT 0,
             burned                  NUMERIC NOT NULL DEFAULT 0
+        );
+        CREATE TYPE ledger_operation AS ENUM ('mint', 'burn', 'send', 'receive');
+        CREATE TABLE IF NOT EXISTS ledger (
+            rune_id                 BIGINT NOT NULL,
+            block_height            BIGINT NOT NULL,
+            tx_index                BIGINT NOT NULL,
+            tx_id                   TEXT NOT NULL,
+            address                 TEXT NOT NULL,
+            amount                  NUMERIC NOT NULL,
+            operation               ledger_operation NOT NULL
         );
     ",
     )?;
@@ -115,3 +125,14 @@ pub fn insert_etching(
     }
     Ok(true)
 }
+
+// pub fn insert_edict(
+//     edict: &Edict,
+//     block_height: u64,
+//     tx_index: u32,
+//     tx_id: &String,
+//     client: &mut Client,
+//     ctx: &Context,
+// ) -> Result<bool, Error> {
+//     //
+// }
