@@ -1,7 +1,7 @@
 use std::sync::mpsc::channel;
 
 use crate::config::Config;
-use crate::db::{insert_etching, init_db};
+use crate::db::{init_db, insert_etching};
 use bitcoin::absolute::LockTime;
 use bitcoin::transaction::TxOut;
 use bitcoin::ScriptBuf;
@@ -23,16 +23,17 @@ use postgres::NoTls;
 pub fn start_service(config: &Config, ctx: &Context) -> Result<(), String> {
     let ctx_moved = ctx.clone();
     std::thread::spawn(move || {
-        let _init_db_res = match init_db() {
+        let _init_db_res = match init_db(&ctx_moved) {
             Ok(res) => res,
             Err(e) => {
                 error!(
                     ctx_moved.expect_logger(),
-                    "Init DB error: {}", e.to_string(),
+                    "Init DB error: {}",
+                    e.to_string(),
                 );
                 std::process::exit(1);
             }
-        };    
+        };
     });
 
     // let _init_db_res = match init_db() {
@@ -76,10 +77,7 @@ pub fn start_service(config: &Config, ctx: &Context) -> Result<(), String> {
     let context_cloned = ctx.clone();
     let config_cloned = config.clone();
 
-    info!(
-        ctx.expect_logger(),
-        "Listening for new blocks",
-    );
+    info!(ctx.expect_logger(), "Listening for new blocks",);
 
     loop {
         let event = match observer_event_rx.recv() {
@@ -98,8 +96,7 @@ pub fn start_service(config: &Config, ctx: &Context) -> Result<(), String> {
             ObserverEvent::BitcoinChainEvent((
                 BitcoinChainEvent::ChainUpdatedWithBlocks(blocks),
                 _,
-            )) => {
-            }
+            )) => {}
             ObserverEvent::Terminate => {}
             _ => {}
         }
@@ -149,7 +146,8 @@ pub fn set_up_observer_sidecar_runloop(
 }
 
 pub fn handle_block_processing(block: &mut BitcoinBlockData, ctx: &Context) {
-    let mut pg_client = Client::connect("host=localhost user=postgres", NoTls).expect("unable to create pg client");
+    let mut pg_client =
+        Client::connect("host=localhost user=postgres", NoTls).expect("unable to create pg client");
 
     for tx in block.transactions.iter() {
         let transaction = Transaction {
@@ -171,13 +169,34 @@ pub fn handle_block_processing(block: &mut BitcoinBlockData, ctx: &Context) {
         if let Some(runstone) = runestone_opt {
             match runstone {
                 Artifact::Runestone(data) => {
-                    ctx.try_log(|logger| info!(logger, "Block #{} - detected runestone {:?}", block.block_identifier.index, data));
+                    ctx.try_log(|logger| {
+                        info!(
+                            logger,
+                            "Block #{} - detected runestone {:?}",
+                            block.block_identifier.index,
+                            data
+                        )
+                    });
                     if let Some(etching) = data.etching {
-                        let _ = insert_etching(&etching, &mut pg_client, ctx);
+                        let _ = insert_etching(
+                            &etching,
+                            block.block_identifier.index,
+                            tx.metadata.index,
+                            &tx.transaction_identifier.hash,
+                            &mut pg_client,
+                            ctx,
+                        );
                     }
                 }
                 Artifact::Cenotaph(data) => {
-                    ctx.try_log(|logger| info!(logger, "Block #{} - detected cenotaph {:?}", block.block_identifier.index, data));
+                    ctx.try_log(|logger| {
+                        info!(
+                            logger,
+                            "Block #{} - detected cenotaph {:?}",
+                            block.block_identifier.index,
+                            data
+                        )
+                    });
                 }
             }
         }
