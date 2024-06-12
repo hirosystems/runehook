@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 chainhook-sdk = { version = "=0.12.9", features = ["zeromq"] }
 bitcoin = { version = "0.30.1", features = ["rand"] }
+bytes = "1.3"
 lru = "0.12.3"
 ordinals = "0.0.8"
 rusqlite = { version = "0.28.0", features = ["bundled"] }
