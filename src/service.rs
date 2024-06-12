@@ -1,6 +1,7 @@
 use std::sync::mpsc::channel;
 
 use crate::config::Config;
+use crate::db::{insert_etching, init_db};
 use bitcoin::absolute::LockTime;
 use bitcoin::transaction::TxOut;
 use bitcoin::ScriptBuf;
@@ -14,9 +15,37 @@ use chainhook_sdk::{
     utils::Context,
 };
 use crossbeam_channel::select;
+use ordinals::Artifact;
 use ordinals::Runestone;
+use postgres::Client;
+use postgres::NoTls;
 
 pub fn start_service(config: &Config, ctx: &Context) -> Result<(), String> {
+    let ctx_moved = ctx.clone();
+    std::thread::spawn(move || {
+        let _init_db_res = match init_db() {
+            Ok(res) => res,
+            Err(e) => {
+                error!(
+                    ctx_moved.expect_logger(),
+                    "Init DB error: {}", e.to_string(),
+                );
+                std::process::exit(1);
+            }
+        };    
+    });
+
+    // let _init_db_res = match init_db() {
+    //     Ok(res) => res,
+    //     Err(e) => {
+    //         error!(
+    //             ctx.expect_logger(),
+    //             "Init DB error: {}", e.to_string(),
+    //         );
+    //         std::process::exit(1);
+    //     }
+    // };
+
     let (observer_cmd_tx, observer_cmd_rx) = channel();
     let (observer_event_tx, observer_event_rx) = crossbeam_channel::unbounded();
 
@@ -70,7 +99,6 @@ pub fn start_service(config: &Config, ctx: &Context) -> Result<(), String> {
                 BitcoinChainEvent::ChainUpdatedWithBlocks(blocks),
                 _,
             )) => {
-                println!("Hello block {:?}", blocks);
             }
             ObserverEvent::Terminate => {}
             _ => {}
@@ -121,6 +149,8 @@ pub fn set_up_observer_sidecar_runloop(
 }
 
 pub fn handle_block_processing(block: &mut BitcoinBlockData, ctx: &Context) {
+    let mut pg_client = Client::connect("host=localhost user=postgres", NoTls).expect("unable to create pg client");
+
     for tx in block.transactions.iter() {
         let transaction = Transaction {
             version: 2,
@@ -136,8 +166,21 @@ pub fn handle_block_processing(block: &mut BitcoinBlockData, ctx: &Context) {
                 })
                 .collect(),
         };
-        let runestone = Runestone::decipher(&transaction);
-        ctx.try_log(|logger| info!(logger, "Detected runestone {:?}", runestone))
+        let runestone_opt = Runestone::decipher(&transaction);
+
+        if let Some(runstone) = runestone_opt {
+            match runstone {
+                Artifact::Runestone(data) => {
+                    ctx.try_log(|logger| info!(logger, "Block #{} - detected runestone {:?}", block.block_identifier.index, data));
+                    if let Some(etching) = data.etching {
+                        let _ = insert_etching(&etching, &mut pg_client, ctx);
+                    }
+                }
+                Artifact::Cenotaph(data) => {
+                    ctx.try_log(|logger| info!(logger, "Block #{} - detected cenotaph {:?}", block.block_identifier.index, data));
+                }
+            }
+        }
     }
 }
 
