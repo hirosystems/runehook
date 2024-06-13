@@ -1,7 +1,8 @@
 use std::sync::mpsc::channel;
 
 use crate::config::Config;
-use crate::db::{init_db, insert_etching};
+use crate::db::init_db;
+use crate::db::memory_cache::MemoryCache;
 use bitcoin::absolute::LockTime;
 use bitcoin::transaction::TxOut;
 use bitcoin::ScriptBuf;
@@ -149,6 +150,11 @@ pub fn handle_block_processing(block: &mut BitcoinBlockData, ctx: &Context) {
     let mut pg_client =
         Client::connect("host=localhost user=postgres", NoTls).expect("unable to create pg client");
 
+    let mut db_tx = pg_client
+        .transaction()
+        .expect("unable to begin pg transaction");
+    // TODO: Create outside of this fn
+    let mut memory_cache = MemoryCache::new();
     for tx in block.transactions.iter() {
         let transaction = Transaction {
             version: 2,
@@ -178,12 +184,23 @@ pub fn handle_block_processing(block: &mut BitcoinBlockData, ctx: &Context) {
                         )
                     });
                     if let Some(etching) = data.etching {
-                        let _ = insert_etching(
+                        memory_cache.insert_etching(
                             &etching,
                             block.block_identifier.index,
                             tx.metadata.index,
                             &tx.transaction_identifier.hash,
-                            &mut pg_client,
+                            &mut db_tx,
+                            ctx,
+                        );
+                    }
+                    for edict in data.edicts.iter() {
+                        memory_cache.insert_edict(
+                            edict,
+                            block.block_identifier.index,
+                            tx.metadata.index,
+                            &tx.transaction_identifier.hash,
+                            &"test".to_string(),
+                            &mut db_tx,
                             ctx,
                         );
                     }
@@ -201,6 +218,8 @@ pub fn handle_block_processing(block: &mut BitcoinBlockData, ctx: &Context) {
             }
         }
     }
+    memory_cache.db_cache.flush(&mut db_tx, ctx);
+    let _ = db_tx.commit();
 }
 
 pub fn chainhook_sidecar_mutate_blocks(
