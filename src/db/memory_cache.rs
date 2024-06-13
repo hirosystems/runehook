@@ -50,8 +50,8 @@ impl MemoryCache {
         block_height: u64,
         tx_index: u32,
         tx_id: &String,
-        db_tx: &Transaction,
-        ctx: &Context,
+        _db_tx: &Transaction,
+        _ctx: &Context,
     ) {
         self.max_rune_number += 1;
         self.db_cache.runes.push(DbRune::from_etching(
