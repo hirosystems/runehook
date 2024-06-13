@@ -2,7 +2,7 @@ use std::sync::mpsc::channel;
 
 use crate::config::Config;
 use crate::db::init_db;
-use crate::db::memory_cache::MemoryCache;
+use crate::db::index_cache::IndexCache;
 use bitcoin::absolute::LockTime;
 use bitcoin::transaction::TxOut;
 use bitcoin::ScriptBuf;
@@ -154,7 +154,7 @@ pub fn handle_block_processing(block: &mut BitcoinBlockData, ctx: &Context) {
         .transaction()
         .expect("unable to begin pg transaction");
     // TODO: Create outside of this fn
-    let mut memory_cache = MemoryCache::new();
+    let mut memory_cache = IndexCache::new();
     for tx in block.transactions.iter() {
         let transaction = Transaction {
             version: 2,

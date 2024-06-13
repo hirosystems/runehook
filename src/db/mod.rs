@@ -2,52 +2,16 @@ use chainhook_sdk::utils::Context;
 use model::DbRune;
 use ordinals::RuneId;
 use postgres::{Client, Error, NoTls, Transaction};
+use refinery::embed_migrations;
 
-pub mod memory_cache;
+pub mod index_cache;
 pub mod model;
+
+embed_migrations!("migrations");
 
 pub fn init_db(ctx: &Context) -> Result<Client, Error> {
     let mut client = Client::connect("host=localhost user=postgres", NoTls)?;
-    // TODO: use migrations with `refinery`
-    client.batch_execute(
-        "
-        CREATE TABLE IF NOT EXISTS runes (
-            number                  BIGINT NOT NULL PRIMARY KEY,
-            name                    TEXT NOT NULL UNIQUE,
-            block_height            NUMERIC NOT NULL,
-            tx_index                BIGINT NOT NULL,
-            tx_id                   TEXT NOT NULL,
-            divisibility            SMALLINT,
-            premine                 NUMERIC,
-            symbol                  TEXT,
-            terms_amount            NUMERIC,
-            terms_cap               NUMERIC,
-            terms_height_start      BIGINT,
-            terms_height_end        BIGINT,
-            terms_offset_start      BIGINT,
-            terms_offset_end        BIGINT,
-            turbo                   BOOLEAN NOT NULL,
-            minted                  NUMERIC NOT NULL DEFAULT 0,
-            burned                  NUMERIC NOT NULL DEFAULT 0
-        );
-        CREATE INDEX runes_block_height_tx_index_index ON runes (block_height, tx_index);
-
-        CREATE TYPE ledger_operation AS ENUM ('mint', 'burn', 'send', 'receive');
-
-        CREATE TABLE IF NOT EXISTS ledger (
-            rune_number             BIGINT NOT NULL,
-            block_height            NUMERIC NOT NULL,
-            tx_index                BIGINT NOT NULL,
-            tx_id                   TEXT NOT NULL,
-            address                 TEXT NOT NULL,
-            amount                  NUMERIC NOT NULL,
-            operation               ledger_operation NOT NULL
-        );
-        CREATE INDEX ledger_rune_number_index ON ledger (rune_number);
-        CREATE INDEX ledger_block_height_tx_index_index ON ledger (block_height, tx_index);
-        CREATE INDEX ledger_address_rune_number_index ON ledger (address, rune_number);
-    ",
-    )?;
+    migrations::runner().run(&mut client).unwrap();
     // Insert default UNCOMMON•GOODS rune
     // let rune = SpacedRune::from_str("UNCOMMON•GOODS").unwrap();
     // let _ = insert_etching(

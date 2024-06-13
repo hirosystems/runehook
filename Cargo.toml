@@ -24,6 +24,7 @@ clap = { version = "4.3.2", features = ["derive"] }
 clap_generate = { version = "3.0.3" }
 postgres = "0.19.7"
 tokio = { version = "1.38.0", features = ["rt-multi-thread", "macros"] }
+refinery = { version = "0.8", features = ["postgres"] }
 
 [dev-dependencies]
 test-case = "3.1.0"

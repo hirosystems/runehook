@@ -30,14 +30,14 @@ impl DbCache {
     }
 }
 
-pub struct MemoryCache {
+pub struct IndexCache {
     pub max_rune_number: u64,
     pub db_cache: DbCache,
 }
 
-impl MemoryCache {
+impl IndexCache {
     pub fn new() -> Self {
-        MemoryCache {
+        IndexCache {
             db_cache: DbCache::new(),
             // TODO: get from db
             max_rune_number: 0,
