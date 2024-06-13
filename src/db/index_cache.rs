@@ -1,6 +1,6 @@
 use chainhook_sdk::utils::Context;
 use ordinals::{Edict, Etching, RuneId};
-use postgres::Transaction;
+use tokio_postgres::Transaction;
 
 use super::{
     get_rune_by_rune_id, insert_rune_rows,
@@ -44,7 +44,7 @@ impl IndexCache {
         }
     }
 
-    pub fn insert_etching(
+    pub async fn insert_etching(
         &mut self,
         etching: &Etching,
         block_height: u64,
@@ -63,7 +63,7 @@ impl IndexCache {
         ));
     }
 
-    pub fn insert_edict(
+    pub async fn insert_edict(
         &mut self,
         edict: &Edict,
         block_height: u64,
@@ -73,7 +73,7 @@ impl IndexCache {
         db_tx: &mut Transaction,
         ctx: &Context,
     ) {
-        let Some(db_rune) = self.get_rune_by_rune_id(edict.id, db_tx, ctx) else {
+        let Some(db_rune) = self.get_rune_by_rune_id(edict.id, db_tx, ctx).await else {
             // log
             return;
         };
@@ -88,7 +88,12 @@ impl IndexCache {
         ));
     }
 
-    fn get_rune_by_rune_id(&mut self, rune_id: RuneId, db_tx: &mut Transaction, ctx: &Context) -> Option<DbRune> {
-        get_rune_by_rune_id(rune_id, db_tx, ctx)
+    async fn get_rune_by_rune_id(
+        &mut self,
+        rune_id: RuneId,
+        db_tx: &Transaction,
+        ctx: &Context,
+    ) -> Option<DbRune> {
+        get_rune_by_rune_id(rune_id, db_tx, ctx).await
     }
 }

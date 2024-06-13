@@ -1,15 +1,15 @@
 use crate::config::Config;
+use crate::service::handle_block_processing;
 use chainhook_sdk::bitcoincore_rpc::RpcApi;
 use chainhook_sdk::bitcoincore_rpc::{Auth, Client};
 use chainhook_sdk::chainhooks::bitcoin::{
     evaluate_bitcoin_chainhooks_on_chain_event, handle_bitcoin_hook_action,
     BitcoinChainhookOccurrence, BitcoinTriggerChainhook,
 };
-use chainhook_sdk::chainhooks::types::{
-    BitcoinChainhookSpecification, BitcoinPredicateType, OrdinalOperations,
-};
+use chainhook_sdk::chainhooks::types::BitcoinChainhookSpecification;
 use chainhook_sdk::indexer::bitcoin::{
     build_http_client, download_and_parse_block_with_retry, retrieve_block_hash_with_retry,
+    standardize_bitcoin_block,
 };
 use chainhook_sdk::observer::{gather_proofs, DataHandlerEvent, EventObserverConfig};
 use chainhook_sdk::types::{
@@ -24,7 +24,6 @@ pub async fn scan_bitcoin_chainstate_via_rpc_using_predicate(
     event_observer_config_override: Option<&EventObserverConfig>,
     ctx: &Context,
 ) -> Result<(), String> {
-
     let auth = Auth::UserPass(
         config.event_observer.bitcoind_rpc_username.clone(),
         config.event_observer.bitcoind_rpc_username.clone(),
@@ -79,33 +78,14 @@ pub async fn scan_bitcoin_chainstate_via_rpc_using_predicate(
 
     let event_observer_config = match event_observer_config_override {
         Some(config_override) => config_override.clone(),
-        None => config.get_event_observer_config(),
+        None => config.event_observer.clone(),
     };
     let bitcoin_config = event_observer_config.get_bitcoin_config();
     let mut number_of_blocks_scanned = 0;
     let http_client = build_http_client();
 
     while let Some(current_block_height) = block_heights_to_scan.pop_front() {
-        let mut inscriptions_db_conn =
-            open_readonly_ordhook_db_conn(&config.expected_cache_path(), ctx)?;
-        let brc20_db_conn = match predicate_spec.predicate {
-            BitcoinPredicateType::OrdinalsProtocol(OrdinalOperations::InscriptionFeed(
-                ref feed_data,
-            )) if feed_data.meta_protocols.is_some() => {
-                Some(open_readonly_brc20_db_conn(
-                    &config.expected_cache_path(),
-                    ctx,
-                )?)
-            }
-            _ => None,
-        };
-
         number_of_blocks_scanned += 1;
-
-        if !get_any_entry_in_ordinal_activities(&current_block_height, &inscriptions_db_conn, &ctx)
-        {
-            continue;
-        }
 
         let block_hash = retrieve_block_hash_with_retry(
             &http_client,
@@ -114,49 +94,15 @@ pub async fn scan_bitcoin_chainstate_via_rpc_using_predicate(
             ctx,
         )
         .await?;
-        let block_breakdown =
+        let raw_block =
             download_and_parse_block_with_retry(&http_client, &block_hash, &bitcoin_config, ctx)
                 .await?;
-        let mut block = match parse_inscriptions_and_standardize_block(
-            block_breakdown,
-            &event_observer_config.bitcoin_network,
-            ctx,
-        ) {
-            Ok(data) => data,
-            Err((e, _)) => {
-                warn!(
-                    ctx.expect_logger(),
-                    "Unable to standardize block#{} {}: {}", current_block_height, block_hash, e
-                );
-                continue;
-            }
-        };
 
-        {
-            let inscriptions_db_tx = inscriptions_db_conn.transaction().unwrap();
-            consolidate_block_with_pre_computed_ordinals_data(
-                &mut block,
-                &inscriptions_db_tx,
-                true,
-                brc20_db_conn.as_ref(),
-                &ctx,
-            );
-        }
+        let mut block =
+            standardize_bitcoin_block(raw_block, &config.event_observer.bitcoin_network, ctx)
+                .unwrap();
 
-        let inscriptions_revealed = get_inscriptions_revealed_in_block(&block)
-            .iter()
-            .map(|d| d.get_inscription_number().to_string())
-            .collect::<Vec<String>>();
-
-        let inscriptions_transferred = get_inscriptions_transferred_in_block(&block).len();
-
-        info!(
-            ctx.expect_logger(),
-            "Processing block #{current_block_height} through {} predicate revealed {} new inscriptions [{}] and {inscriptions_transferred} transfers",
-            predicate_spec.uuid,
-            inscriptions_revealed.len(),
-            inscriptions_revealed.join(", ")
-        );
+        handle_block_processing(&mut block, ctx).await;
 
         match process_block_with_predicates(
             block,
@@ -168,41 +114,6 @@ pub async fn scan_bitcoin_chainstate_via_rpc_using_predicate(
         {
             Ok(actions) => actions_triggered += actions,
             Err(_) => err_count += 1,
-        }
-
-        if err_count >= 3 {
-            return Err(format!("Scan aborted (consecutive action errors >= 3)"));
-        }
-        {
-            let observers_db_conn =
-                open_readwrite_observers_db_conn_or_panic(&config.expected_cache_path(), &ctx);
-            update_observer_progress(
-                &predicate_spec.uuid,
-                current_block_height,
-                &observers_db_conn,
-                &ctx,
-            )
-        }
-        if block_heights_to_scan.is_empty() && floating_end_block {
-            let new_tip = match bitcoin_rpc.get_blockchain_info() {
-                Ok(result) => match predicate_spec.end_block {
-                    Some(end_block) => {
-                        if end_block > result.blocks {
-                            result.blocks
-                        } else {
-                            end_block
-                        }
-                    }
-                    None => result.blocks,
-                },
-                Err(_e) => {
-                    continue;
-                }
-            };
-
-            for entry in (current_block_height + 1)..new_tip {
-                block_heights_to_scan.push_back(entry);
-            }
         }
     }
     info!(

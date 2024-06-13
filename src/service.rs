@@ -18,24 +18,21 @@ use chainhook_sdk::{
 use crossbeam_channel::select;
 use ordinals::Artifact;
 use ordinals::Runestone;
-use postgres::Client;
-use postgres::NoTls;
+use tokio_postgres::NoTls;
 
-pub fn start_service(config: &Config, ctx: &Context) -> Result<(), String> {
+pub async fn start_service(config: &Config, ctx: &Context) -> Result<(), String> {
     let ctx_moved = ctx.clone();
-    std::thread::spawn(move || {
-        let _init_db_res = match init_db(&ctx_moved) {
-            Ok(res) => res,
-            Err(e) => {
-                error!(
-                    ctx_moved.expect_logger(),
-                    "Init DB error: {}",
-                    e.to_string(),
-                );
-                std::process::exit(1);
-            }
-        };
-    });
+    let _init_db_res = match init_db(ctx).await {
+        Ok(res) => res,
+        Err(e) => {
+            error!(
+                ctx_moved.expect_logger(),
+                "Init DB error: {}",
+                e.to_string(),
+            );
+            std::process::exit(1);
+        }
+    };
 
     // let _init_db_res = match init_db() {
     //     Ok(res) => res,
@@ -146,9 +143,11 @@ pub fn set_up_observer_sidecar_runloop(
     Ok(observer_sidecar)
 }
 
-pub fn handle_block_processing(block: &mut BitcoinBlockData, ctx: &Context) {
-    let mut pg_client =
-        Client::connect("host=localhost user=postgres", NoTls).expect("unable to create pg client");
+pub async fn handle_block_processing(block: &mut BitcoinBlockData, ctx: &Context) {
+    let (mut pg_client, connection) =
+        tokio_postgres::connect("host=localhost user=postgres", NoTls)
+            .await
+            .expect("unable to create pg client");
 
     let mut db_tx = pg_client
         .transaction()
@@ -239,7 +238,7 @@ pub fn chainhook_sidecar_mutate_blocks(
             // Process data
             // ...
             // Block 840,000
-            handle_block_processing(&mut cache.block, ctx);
+            // handle_block_processing(&mut cache.block, ctx);
             cache.processed_by_sidecar = true;
         }
     }

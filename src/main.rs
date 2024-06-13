@@ -9,8 +9,8 @@ extern crate serde;
 pub mod cli;
 pub mod config;
 pub mod db;
+pub mod scan;
 pub mod service;
-// pub mod scan;
 
 // #[tokio::main]
 fn main() {

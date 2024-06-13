@@ -1,9 +1,13 @@
 use clap::{Parser, Subcommand};
 
-use chainhook_sdk::utils::Context;
+use chainhook_sdk::{
+    chainhooks::types::{BitcoinChainhookSpecification, BitcoinPredicateType, RunesOperations},
+    utils::{BlockHeights, Context},
+};
 
 use crate::{
     config::{generator::generate_config, Config},
+    scan::bitcoin::scan_bitcoin_chainstate_via_rpc_using_predicate,
     service::start_service,
 };
 
@@ -19,9 +23,12 @@ enum Command {
     /// Generate configuration file
     #[clap(subcommand)]
     Config(ConfigCommand),
-    /// Run a service streaming blocks and submitting price feeds updates
+    /// Streaming blocks and indexing runes
     #[clap(subcommand)]
-    Service(ServiceCommand),
+    Stream(StreamCommand),
+    /// Scanning blocks and indexing runes
+    #[clap(subcommand)]
+    Scan(ScanCommand),
 }
 
 #[derive(Subcommand, PartialEq, Clone, Debug)]
@@ -58,21 +65,39 @@ struct NewConfig {
 }
 
 #[derive(Subcommand, PartialEq, Clone, Debug)]
-#[clap(bin_name = "service")]
-enum ServiceCommand {
+#[clap(bin_name = "stream")]
+enum StreamCommand {
     /// Run a service
     #[clap(name = "start", bin_name = "start")]
-    Start(StartCommand),
+    Start(StartStreamCommand),
+}
+
+#[derive(Subcommand, PartialEq, Clone, Debug)]
+#[clap(bin_name = "scan")]
+enum ScanCommand {
+    /// Run a scan
+    #[clap(name = "start", bin_name = "start")]
+    Start(StartScanCommand),
 }
 
 #[derive(Parser, PartialEq, Clone, Debug)]
-struct StartCommand {
+struct StartStreamCommand {
     /// Load config file path
     #[clap(long = "config-path")]
     pub config_path: String,
-    // /// Start REST API for managing configuration
-    // #[clap(long = "start-http-api")]
-    // pub start_http_api: bool,
+}
+
+#[derive(Parser, PartialEq, Clone, Debug)]
+struct StartScanCommand {
+    /// Load config file path
+    #[clap(long = "config-path")]
+    pub config_path: String,
+    /// Interval of blocks (--interval 767430:800000)
+    #[clap(long = "interval", conflicts_with = "blocks")]
+    pub blocks_interval: Option<String>,
+    /// List of blocks (--blocks 767430,767431,767433,800000)
+    #[clap(long = "blocks", conflicts_with = "interval")]
+    pub blocks: Option<String>,
 }
 
 #[derive(Parser, PartialEq, Clone, Debug)]
@@ -122,11 +147,68 @@ async fn handle_command(opts: Opts, ctx: Context) -> Result<(), String> {
                 .map_err(|e| format!("unable to write file {}\n{}", file_path.display(), e))?;
             println!("Created file Chainhook.toml");
         }
-        Command::Service(ServiceCommand::Start(options)) => {
-            // Start service
-            let config = Config::from_file_path(&options.config_path)?;
-            start_service(&config, &ctx)?;
+        Command::Stream(StreamCommand::Start(cmd)) => {
+            // Start stream
+            let config = Config::from_file_path(&cmd.config_path)?;
+            start_service(&config, &ctx).await?;
+        }
+        Command::Scan(ScanCommand::Start(cmd)) => {
+            // Start scan
+            let config = Config::from_file_path(&cmd.config_path)?;
+            let blocks = cmd.get_blocks();
+            let predicate = BitcoinChainhookSpecification {
+                uuid: format!("ordhook-internal-trigger"),
+                owner_uuid: None,
+                name: format!("ordhook-internal-trigger"),
+                network: config.event_observer.bitcoin_network.clone(),
+                version: 1,
+                blocks: Some(blocks),
+                start_block: None,
+                end_block: None,
+                expired_at: None,
+                expire_after_occurrence: None,
+                predicate: BitcoinPredicateType::RunesProtocol(RunesOperations::Feed),
+                action: chainhook_sdk::chainhooks::types::HookAction::Noop,
+                include_proof: false,
+                include_inputs: true,
+                include_outputs: false,
+                include_witness: false,
+                enabled: true,
+            };
+
+            scan_bitcoin_chainstate_via_rpc_using_predicate(&predicate, &config, None, &ctx)
+                .await?;
         }
     }
     Ok(())
+}
+
+impl StartScanCommand {
+    pub fn get_blocks(&self) -> Vec<u64> {
+        let blocks = match (&self.blocks_interval, &self.blocks) {
+            (Some(interval), None) => {
+                let blocks = interval.split(':').collect::<Vec<_>>();
+                let start_block: u64 = blocks
+                    .first()
+                    .expect("unable to get start_block")
+                    .parse::<u64>()
+                    .expect("unable to parse start_block");
+                let end_block: u64 = blocks
+                    .get(1)
+                    .expect("unable to get end_block")
+                    .parse::<u64>()
+                    .expect("unable to parse end_block");
+                BlockHeights::BlockRange(start_block, end_block).get_sorted_entries()
+            }
+            (None, Some(blocks)) => {
+                let blocks = blocks
+                    .split(',')
+                    .map(|b| b.parse::<u64>().expect("unable to parse block"))
+                    .collect::<Vec<_>>();
+                BlockHeights::Blocks(blocks).get_sorted_entries()
+            }
+            _ => panic!("'--interval' or '--blocks' argument required. '--help' for more details."),
+        };
+        blocks.unwrap().into()
+    }
 }

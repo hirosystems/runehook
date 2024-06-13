@@ -1,7 +1,7 @@
 use chainhook_sdk::utils::Context;
 use model::DbRune;
 use ordinals::RuneId;
-use postgres::{Client, Error, NoTls, Transaction};
+use tokio_postgres::{Client, Error, NoTls, Transaction};
 use refinery::embed_migrations;
 
 pub mod index_cache;
@@ -9,8 +9,18 @@ pub mod model;
 
 embed_migrations!("migrations");
 
-pub fn init_db(ctx: &Context) -> Result<Client, Error> {
-    let mut client = Client::connect("host=localhost user=postgres", NoTls)?;
+pub async fn init_db(ctx: &Context) -> Result<Client, Error> {
+    // let mut client = Client::connect("host=localhost user=postgres", NoTls)?;
+    let (client, connection) =
+        tokio_postgres::connect("host=localhost user=postgres", NoTls).await?;
+
+    // The connection object performs the actual communication with the database,
+    // so spawn it off to run on its own.
+    tokio::spawn(async move {
+        if let Err(e) = connection.await {
+            eprintln!("connection error: {}", e);
+        }
+    });
     migrations::runner().run(&mut client).unwrap();
     // Insert default UNCOMMON•GOODS rune
     // let rune = SpacedRune::from_str("UNCOMMON•GOODS").unwrap();
@@ -38,7 +48,7 @@ pub fn init_db(ctx: &Context) -> Result<Client, Error> {
     Ok(client)
 }
 
-pub fn insert_rune_rows(
+pub async fn insert_rune_rows(
     rows: &Vec<DbRune>,
     db_tx: &mut Transaction,
     _ctx: &Context,
@@ -69,7 +79,7 @@ pub fn insert_rune_rows(
                 &row.terms_offset_end,
                 &row.turbo,
             ],
-        );
+        ).await;
     }
     Ok(true)
 }
@@ -85,11 +95,11 @@ pub fn insert_rune_rows(
 //     //
 // }
 
-pub fn get_rune_by_rune_id(rune_id: RuneId, db_tx: &mut Transaction, ctx: &Context) -> Option<DbRune> {
+pub async fn get_rune_by_rune_id(rune_id: RuneId, db_tx: &mut Transaction, ctx: &Context) -> Option<DbRune> {
     let rows = match db_tx.query(
         "SELECT * FROM runes WHERE block_height = $1 AND tx_index = $2",
         &[&rune_id.block.to_string(), &rune_id.tx.to_string()],
-    ) {
+    ).await {
         Ok(rows) => rows,
         Err(e) => {
             error!(

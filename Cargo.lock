@@ -522,12 +522,10 @@ checksum = "fd16c4719339c4530435d38e511904438d07cce7950afa3718a84ac36c10e89e"
 
 [[package]]
 name = "chainhook-sdk"
-version = "0.12.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3ec57ac80c89c5356036f56af34ba85730a94e28f128af364e3cc4d0ee02df81"
+version = "0.12.10"
 dependencies = [
  "base58",
- "base64 0.22.1",
+ "base64 0.21.7",
  "bitcoincore-rpc",
  "bitcoincore-rpc-json",
  "chainhook-types",
@@ -558,9 +556,7 @@ dependencies = [
 
 [[package]]
 name = "chainhook-types"
-version = "1.3.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "63f0d358e5c530dd6888e4678ef4ba3f7782525653a1012d33e96a48020c418d"
+version = "1.3.6"
 dependencies = [
  "hex",
  "schemars",
@@ -2559,20 +2555,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "postgres"
-version = "0.19.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7915b33ed60abc46040cbcaa25ffa1c7ec240668e0477c4f3070786f5916d451"
-dependencies = [
- "bytes",
- "fallible-iterator 0.2.0",
- "futures-util",
- "log",
- "tokio",
- "tokio-postgres",
-]
-
-[[package]]
 name = "postgres-protocol"
 version = "0.6.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2827,12 +2809,13 @@ dependencies = [
  "async-trait",
  "cfg-if",
  "log",
- "postgres",
  "regex",
  "serde",
  "siphasher 1.0.1",
  "thiserror",
  "time",
+ "tokio",
+ "tokio-postgres",
  "toml 0.8.12",
  "url",
  "walkdir",
@@ -3075,7 +3058,6 @@ dependencies = [
  "hiro-system-kit",
  "lru",
  "ordinals",
- "postgres",
  "rand",
  "refinery",
  "reqwest",
@@ -3084,6 +3066,7 @@ dependencies = [
  "serde_derive",
  "test-case",
  "tokio",
+ "tokio-postgres",
  "toml 0.5.11",
 ]
 
@@ -3218,9 +3201,8 @@ dependencies = [
 
 [[package]]
 name = "schemars"
-version = "0.8.19"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fc6e7ed6919cb46507fb01ff1654309219f62b4d603822501b0b80d42f6f21ef"
+version = "0.8.16"
+source = "git+https://github.com/hirosystems/schemars.git?branch=feat-chainhook-fixes#d0c10b50478a06198a54e5b90be460112b38b357"
 dependencies = [
  "dyn-clone",
  "schemars_derive",
@@ -3230,14 +3212,13 @@ dependencies = [
 
 [[package]]
 name = "schemars_derive"
-version = "0.8.19"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "185f2b7aa7e02d418e453790dde16890256bbd2bcd04b7dc5348811052b53f49"
+version = "0.8.16"
+source = "git+https://github.com/hirosystems/schemars.git?branch=feat-chainhook-fixes#d0c10b50478a06198a54e5b90be460112b38b357"
 dependencies = [
  "proc-macro2",
  "quote",
  "serde_derive_internals",
- "syn 2.0.61",
+ "syn 1.0.109",
 ]
 
 [[package]]
@@ -3384,13 +3365,13 @@ dependencies = [
 
 [[package]]
 name = "serde_derive_internals"
-version = "0.29.0"
+version = "0.26.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "330f01ce65a3a5fe59a60c82f3c9a024b573b8a6e875bd233fe5f934e71d54e3"
+checksum = "85bf8229e7920a9f636479437026331ce11aa132b4dde37d121944a44d6e5f3c"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.61",
+ "syn 1.0.109",
 ]
 
 [[package]]
