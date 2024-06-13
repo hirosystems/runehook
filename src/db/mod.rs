@@ -1,33 +1,37 @@
 use chainhook_sdk::utils::Context;
-use model::DbRune;
+use models::DbRune;
 use ordinals::RuneId;
 use refinery::embed_migrations;
 use tokio_postgres::{Client, Error, NoTls, Transaction};
+use types::{PgBigIntU32, PgNumericU64};
 
 pub mod index_cache;
-pub mod model;
+pub mod models;
+pub mod types;
 
 embed_migrations!("migrations");
 
 pub async fn init_db(ctx: &Context) -> Result<Client, Error> {
-    // let mut client = Client::connect("host=localhost user=postgres", NoTls)?;
     let (mut client, connection) =
         tokio_postgres::connect("host=localhost user=postgres", NoTls).await?;
-
-    // The connection object performs the actual communication with the database,
-    // so spawn it off to run on its own.
     tokio::spawn(async move {
         if let Err(e) = connection.await {
             eprintln!("connection error: {}", e);
         }
     });
 
+    info!(ctx.expect_logger(), "Running postgres migrations");
     match migrations::runner().run_async(&mut client).await {
-        Ok(_) => {},
+        Ok(_) => {}
         Err(e) => {
-            error!(ctx.expect_logger(), "error running pg migrations: {}", e.to_string())
-        },
+            error!(
+                ctx.expect_logger(),
+                "error running pg migrations: {}",
+                e.to_string()
+            )
+        }
     };
+    info!(ctx.expect_logger(), "Postgres migrations complete");
     // Insert default UNCOMMON•GOODS rune
     // let rune = SpacedRune::from_str("UNCOMMON•GOODS").unwrap();
     // let _ = insert_etching(
@@ -57,20 +61,22 @@ pub async fn init_db(ctx: &Context) -> Result<Client, Error> {
 pub async fn insert_rune_rows(
     rows: &Vec<DbRune>,
     db_tx: &mut Transaction<'_>,
-    _ctx: &Context,
+    ctx: &Context,
 ) -> Result<bool, Error> {
+    info!(ctx.expect_logger(), "Inserting {} rows", rows.len());
     let stmt = db_tx.prepare(
         "INSERT INTO runes
-        (name, block_height, tx_index, tx_id, divisibility, premine, symbol, terms_amount, terms_cap, terms_height_start,
+        (number, name, block_height, tx_index, tx_id, divisibility, premine, symbol, terms_amount, terms_cap, terms_height_start,
          terms_height_end, terms_offset_start, terms_offset_end, turbo)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
         ON CONFLICT (name) DO NOTHING"
-    ).await?;
+    ).await.expect("Unable to prepare statement");
     for row in rows.iter() {
-        let _ = db_tx
+        match db_tx
             .execute(
                 &stmt,
                 &[
+                    &row.number,
                     &row.name,
                     &row.block_height,
                     &row.tx_index,
@@ -87,7 +93,19 @@ pub async fn insert_rune_rows(
                     &row.turbo,
                 ],
             )
-            .await;
+            .await
+        {
+            Ok(_) => {}
+            Err(e) => {
+                error!(
+                    ctx.expect_logger(),
+                    "Error inserting rune: {:?} {:?}",
+                    e,
+                    row
+                );
+                panic!()
+            }
+        };
     }
     Ok(true)
 }
@@ -111,7 +129,7 @@ pub async fn get_rune_by_rune_id(
     let rows = match db_tx
         .query(
             "SELECT * FROM runes WHERE block_height = $1 AND tx_index = $2",
-            &[&rune_id.block.to_string(), &rune_id.tx.to_string()],
+            &[&PgNumericU64(rune_id.block), &PgBigIntU32(rune_id.tx)],
         )
         .await
     {

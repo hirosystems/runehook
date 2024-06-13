@@ -4,7 +4,7 @@ use tokio_postgres::Transaction;
 
 use super::{
     get_rune_by_rune_id, insert_rune_rows,
-    model::{DbLedgerEntry, DbLedgerOperation, DbRune},
+    models::{DbLedgerEntry, DbLedgerOperation, DbRune},
 };
 
 pub struct DbCache {
@@ -15,14 +15,14 @@ pub struct DbCache {
 impl DbCache {
     fn new() -> Self {
         DbCache {
-            runes: vec![],
-            ledger_entries: vec![],
+            runes: Vec::new(),
+            ledger_entries: Vec::new(),
         }
     }
 
-    pub fn flush(&mut self, db_tx: &mut Transaction, ctx: &Context) {
+    pub async fn flush(&mut self, db_tx: &mut Transaction<'_>, ctx: &Context) {
         if self.runes.len() > 0 {
-            let _ = insert_rune_rows(&self.runes, db_tx, ctx);
+            let _ = insert_rune_rows(&self.runes, db_tx, ctx).await;
         }
         if self.ledger_entries.len() > 0 {
             //
@@ -31,7 +31,7 @@ impl DbCache {
 }
 
 pub struct IndexCache {
-    pub max_rune_number: u64,
+    pub max_rune_number: u32,
     pub db_cache: DbCache,
 }
 
@@ -74,28 +74,28 @@ impl IndexCache {
         db_tx: &mut Transaction<'_>,
         ctx: &Context,
     ) {
-        let Some(db_rune) = self.get_rune_by_rune_id(edict.id, db_tx, ctx).await else {
-            // log
-            return;
-        };
-        self.db_cache.ledger_entries.push(DbLedgerEntry::from_edict(
-            edict,
-            &db_rune,
-            block_height,
-            tx_index,
-            tx_id,
-            sender_address,
-            DbLedgerOperation::Send,
-        ));
-        self.db_cache.ledger_entries.push(DbLedgerEntry::from_edict(
-            edict,
-            &db_rune,
-            block_height,
-            tx_index,
-            tx_id,
-            receiver_address,
-            DbLedgerOperation::Receive,
-        ));
+        // let Some(db_rune) = self.get_rune_by_rune_id(edict.id, db_tx, ctx).await else {
+        //     // log
+        //     return;
+        // };
+        // self.db_cache.ledger_entries.push(DbLedgerEntry::from_edict(
+        //     edict,
+        //     &db_rune,
+        //     block_height,
+        //     tx_index,
+        //     tx_id,
+        //     sender_address,
+        //     DbLedgerOperation::Send,
+        // ));
+        // self.db_cache.ledger_entries.push(DbLedgerEntry::from_edict(
+        //     edict,
+        //     &db_rune,
+        //     block_height,
+        //     tx_index,
+        //     tx_id,
+        //     receiver_address,
+        //     DbLedgerOperation::Receive,
+        // ));
     }
 
     async fn get_rune_by_rune_id(&mut self, rune_id: RuneId, db_tx: &mut Transaction<'_>, ctx: &Context) -> Option<DbRune> {

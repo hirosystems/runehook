@@ -1,4 +1,5 @@
 use crate::config::Config;
+use crate::db::init_db;
 use crate::service::handle_block_processing;
 use chainhook_sdk::bitcoincore_rpc::RpcApi;
 use chainhook_sdk::bitcoincore_rpc::{Auth, Client};
@@ -84,6 +85,17 @@ pub async fn scan_bitcoin_chainstate_via_rpc_using_predicate(
     let mut number_of_blocks_scanned = 0;
     let http_client = build_http_client();
 
+    let mut pg_client = match init_db(ctx).await {
+        Ok(res) => res,
+        Err(e) => {
+            error!(
+                ctx.expect_logger(),
+                "Init DB error: {}",
+                e.to_string(),
+            );
+            std::process::exit(1);
+        }
+    };
     while let Some(current_block_height) = block_heights_to_scan.pop_front() {
         number_of_blocks_scanned += 1;
 
@@ -102,7 +114,7 @@ pub async fn scan_bitcoin_chainstate_via_rpc_using_predicate(
             standardize_bitcoin_block(raw_block, &config.event_observer.bitcoin_network, ctx)
                 .unwrap();
 
-        handle_block_processing(&mut block, ctx).await;
+        handle_block_processing(&mut pg_client, &mut block, ctx).await;
 
         match process_block_with_predicates(
             block,

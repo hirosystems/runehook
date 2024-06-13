@@ -18,7 +18,7 @@ use chainhook_sdk::{
 use crossbeam_channel::select;
 use ordinals::Artifact;
 use ordinals::Runestone;
-use tokio_postgres::NoTls;
+use tokio_postgres::Client;
 
 pub async fn start_service(config: &Config, ctx: &Context) -> Result<(), String> {
     let ctx_moved = ctx.clone();
@@ -33,17 +33,6 @@ pub async fn start_service(config: &Config, ctx: &Context) -> Result<(), String>
             std::process::exit(1);
         }
     };
-
-    // let _init_db_res = match init_db() {
-    //     Ok(res) => res,
-    //     Err(e) => {
-    //         error!(
-    //             ctx.expect_logger(),
-    //             "Init DB error: {}", e.to_string(),
-    //         );
-    //         std::process::exit(1);
-    //     }
-    // };
 
     let (observer_cmd_tx, observer_cmd_rx) = channel();
     let (observer_event_tx, observer_event_rx) = crossbeam_channel::unbounded();
@@ -143,12 +132,8 @@ pub fn set_up_observer_sidecar_runloop(
     Ok(observer_sidecar)
 }
 
-pub async fn handle_block_processing(block: &mut BitcoinBlockData, ctx: &Context) {
-    let (mut pg_client, connection) =
-        tokio_postgres::connect("host=localhost user=postgres", NoTls)
-            .await
-            .expect("unable to create pg client");
-
+pub async fn handle_block_processing(pg_client: &mut Client, block: &mut BitcoinBlockData, ctx: &Context) {
+    info!(ctx.expect_logger(), "Processing block {}", block.block_identifier.index);
     let mut db_tx = pg_client
         .transaction()
         .await
@@ -175,14 +160,14 @@ pub async fn handle_block_processing(block: &mut BitcoinBlockData, ctx: &Context
         if let Some(artifact) = runestone_opt {
             match artifact {
                 Artifact::Runestone(runestone) => {
-                    ctx.try_log(|logger| {
-                        info!(
-                            logger,
-                            "Block #{} - detected runestone {:?}",
-                            block.block_identifier.index,
-                            runestone
-                        )
-                    });
+                    // ctx.try_log(|logger| {
+                    //     info!(
+                    //         logger,
+                    //         "Block #{} - detected runestone {:?}",
+                    //         block.block_identifier.index,
+                    //         runestone
+                    //     )
+                    // });
                     if let Some(etching) = runestone.etching {
                         memory_cache.insert_etching(
                             &etching,
@@ -226,8 +211,14 @@ pub async fn handle_block_processing(block: &mut BitcoinBlockData, ctx: &Context
             }
         }
     }
-    memory_cache.db_cache.flush(&mut db_tx, ctx);
-    let _ = db_tx.commit();
+    ctx.try_log(|logger| {
+        info!(
+            logger,
+            "flushing cache",
+        )
+    });
+    memory_cache.db_cache.flush(&mut db_tx, ctx).await;
+    let _ = db_tx.commit().await;
 }
 
 pub fn chainhook_sidecar_mutate_blocks(

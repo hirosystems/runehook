@@ -1,6 +1,10 @@
 use ordinals::{Edict, Etching, Rune, SpacedRune};
 use tokio_postgres::Row;
 
+use super::types::{PgNumericU128, PgBigIntU32, PgNumericU64, PgSmallIntU8};
+
+/// A value from the `ledger_operation` enum type.
+#[derive(Debug)]
 pub enum DbLedgerOperation {
     Mint,
     Burn,
@@ -9,40 +13,56 @@ pub enum DbLedgerOperation {
 }
 
 impl DbLedgerOperation {
-    pub fn to_string(&self) -> String {
+    pub fn as_str(&self) -> &str {
         match self {
-            Self::Mint => "mint".to_string(),
-            Self::Burn => "burn".to_string(),
-            Self::Send => "send".to_string(),
-            Self::Receive => "receive".to_string(),
+            Self::Mint => "mint",
+            Self::Burn => "burn",
+            Self::Send => "send",
+            Self::Receive => "receive",
         }
     }
 }
 
+impl std::str::FromStr for DbLedgerOperation {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "mint" => Ok(DbLedgerOperation::Mint),
+            "burn" => Ok(DbLedgerOperation::Burn),
+            "send" => Ok(DbLedgerOperation::Send),
+            "receive" => Ok(DbLedgerOperation::Receive),
+            _ => Err(()),
+        }
+    }
+}
+
+/// A row in the `runes` table.
+#[derive(Debug)]
 pub struct DbRune {
     pub name: String,
-    pub number: String,
-    pub block_height: String,
-    pub tx_index: String,
+    pub number: PgBigIntU32,
+    pub block_height: PgNumericU64,
+    pub tx_index: PgBigIntU32,
     pub tx_id: String,
-    pub divisibility: Option<String>,
-    pub premine: Option<String>,
+    pub divisibility: Option<PgSmallIntU8>,
+    pub premine: Option<PgNumericU128>,
     pub symbol: Option<String>,
-    pub terms_amount: Option<String>,
-    pub terms_cap: Option<String>,
-    pub terms_height_start: Option<String>,
-    pub terms_height_end: Option<String>,
-    pub terms_offset_start: Option<String>,
-    pub terms_offset_end: Option<String>,
+    pub terms_amount: Option<PgNumericU128>,
+    pub terms_cap: Option<PgNumericU128>,
+    pub terms_height_start: Option<PgNumericU64>,
+    pub terms_height_end: Option<PgNumericU64>,
+    pub terms_offset_start: Option<PgNumericU64>,
+    pub terms_offset_end: Option<PgNumericU64>,
     pub turbo: bool,
-    pub minted: String,
-    pub burned: String,
+    pub minted: PgNumericU128,
+    pub burned: PgNumericU128,
 }
 
 impl DbRune {
     pub fn from_etching(
         etching: &Etching,
-        number: u64,
+        number: u32,
         block_height: u64,
         tx_index: u32,
         tx_id: &String,
@@ -62,21 +82,21 @@ impl DbRune {
         let mut terms_offset_start = None;
         let mut terms_offset_end = None;
         if let Some(terms) = etching.terms {
-            terms_amount = terms.amount.map(|i| i.to_string());
-            terms_cap = terms.cap.map(|i| i.to_string());
-            terms_height_start = terms.height.0.map(|i| i.to_string());
-            terms_height_end = terms.height.1.map(|i| i.to_string());
-            terms_offset_start = terms.offset.0.map(|i| i.to_string());
-            terms_offset_end = terms.offset.1.map(|i| i.to_string());
+            terms_amount = terms.amount.map(|i| PgNumericU128(i));
+            terms_cap = terms.cap.map(|i| PgNumericU128(i));
+            terms_height_start = terms.height.0.map(|i| PgNumericU64(i));
+            terms_height_end = terms.height.1.map(|i| PgNumericU64(i));
+            terms_offset_start = terms.offset.0.map(|i| PgNumericU64(i));
+            terms_offset_end = terms.offset.1.map(|i| PgNumericU64(i));
         }
         DbRune {
             name,
-            number: number.to_string(),
-            block_height: block_height.to_string(),
-            tx_index: tx_index.to_string(),
+            number: PgBigIntU32(number),
+            block_height: PgNumericU64(block_height),
+            tx_index: PgBigIntU32(tx_index),
             tx_id: tx_id.clone(),
-            divisibility: etching.divisibility.map(|r| r.to_string()),
-            premine: etching.premine.map(|p| p.to_string()),
+            divisibility: etching.divisibility.map(|i| PgSmallIntU8(i)),
+            premine: etching.premine.map(|i| PgNumericU128(i)),
             symbol: etching.symbol.map(|i| i.to_string()),
             terms_amount,
             terms_cap,
@@ -85,8 +105,8 @@ impl DbRune {
             terms_offset_start,
             terms_offset_end,
             turbo: etching.turbo,
-            minted: "0".to_string(),
-            burned: "0".to_string(),
+            minted: PgNumericU128(0),
+            burned: PgNumericU128(0),
         }
     }
 
@@ -113,14 +133,16 @@ impl DbRune {
     }
 }
 
+/// A row in the `ledger` table.
+#[derive(Debug)]
 pub struct DbLedgerEntry {
-    pub rune_number: String,
-    pub block_height: String,
-    pub tx_index: String,
+    pub rune_number: PgBigIntU32,
+    pub block_height: PgNumericU64,
+    pub tx_index: PgBigIntU32,
     pub tx_id: String,
     pub address: String,
-    pub amount: String,
-    pub operation: String,
+    pub amount: PgNumericU128,
+    pub operation: DbLedgerOperation,
 }
 
 impl DbLedgerEntry {
@@ -134,13 +156,13 @@ impl DbLedgerEntry {
         operation: DbLedgerOperation,
     ) -> Self {
         DbLedgerEntry {
-            rune_number: db_rune.number.clone(),
-            block_height: block_height.to_string(),
-            tx_index: tx_index.to_string(),
+            rune_number: db_rune.number,
+            block_height: PgNumericU64(block_height),
+            tx_index: PgBigIntU32(tx_index),
             tx_id: tx_id.clone(),
             address: address.clone(),
-            amount: edict.amount.to_string(),
-            operation: operation.to_string(),
+            amount: PgNumericU128(edict.amount),
+            operation,
         }
     }
 }
