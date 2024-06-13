@@ -126,7 +126,7 @@ pub struct DbLedgerEntry {
 impl DbLedgerEntry {
     pub fn from_edict(
         edict: &Edict,
-        db_rune: DbRune,
+        db_rune: &DbRune,
         block_height: u64,
         tx_index: u32,
         tx_id: &String,
@@ -134,7 +134,7 @@ impl DbLedgerEntry {
         operation: DbLedgerOperation,
     ) -> Self {
         DbLedgerEntry {
-            rune_number: db_rune.number,
+            rune_number: db_rune.number.clone(),
             block_height: block_height.to_string(),
             tx_index: tx_index.to_string(),
             tx_id: tx_id.clone(),

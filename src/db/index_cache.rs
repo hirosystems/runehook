@@ -69,7 +69,8 @@ impl IndexCache {
         block_height: u64,
         tx_index: u32,
         tx_id: &String,
-        address: &String,
+        sender_address: &String,
+        receiver_address: &String,
         db_tx: &mut Transaction<'_>,
         ctx: &Context,
     ) {
@@ -79,12 +80,21 @@ impl IndexCache {
         };
         self.db_cache.ledger_entries.push(DbLedgerEntry::from_edict(
             edict,
-            db_rune,
+            &db_rune,
             block_height,
             tx_index,
             tx_id,
-            address,
+            sender_address,
             DbLedgerOperation::Send,
+        ));
+        self.db_cache.ledger_entries.push(DbLedgerEntry::from_edict(
+            edict,
+            &db_rune,
+            block_height,
+            tx_index,
+            tx_id,
+            receiver_address,
+            DbLedgerOperation::Receive,
         ));
     }
 

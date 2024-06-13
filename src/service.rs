@@ -172,18 +172,18 @@ pub async fn handle_block_processing(block: &mut BitcoinBlockData, ctx: &Context
         };
         let runestone_opt = Runestone::decipher(&transaction);
 
-        if let Some(runstone) = runestone_opt {
-            match runstone {
-                Artifact::Runestone(data) => {
+        if let Some(artifact) = runestone_opt {
+            match artifact {
+                Artifact::Runestone(runestone) => {
                     ctx.try_log(|logger| {
                         info!(
                             logger,
                             "Block #{} - detected runestone {:?}",
                             block.block_identifier.index,
-                            data
+                            runestone
                         )
                     });
-                    if let Some(etching) = data.etching {
+                    if let Some(etching) = runestone.etching {
                         memory_cache.insert_etching(
                             &etching,
                             block.block_identifier.index,
@@ -193,13 +193,21 @@ pub async fn handle_block_processing(block: &mut BitcoinBlockData, ctx: &Context
                             ctx,
                         ).await;
                     }
-                    for edict in data.edicts.iter() {
+                    for edict in runestone.edicts.iter() {
+                        // if let Some(pointer) = runestone.pointer {
+                        //     let output = &tx.metadata.outputs[pointer as usize];
+                        //     let bytes = hex::decode(&output.script_pubkey).unwrap();
+                        //     let script = ScriptBuf::from_bytes(bytes);
+                        //     script.is_op_return();
+                        // }
+                        // for vout in tx.metadata.outputs.iter().fil
                         memory_cache.insert_edict(
                             edict,
                             block.block_identifier.index,
                             tx.metadata.index,
                             &tx.transaction_identifier.hash,
-                            &"test".to_string(),
+                            &"test_sender".to_string(),
+                            &"test_receiver".to_string(),
                             &mut db_tx,
                             ctx,
                         ).await;
