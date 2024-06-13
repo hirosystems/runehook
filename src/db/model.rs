@@ -1,5 +1,5 @@
 use ordinals::{Edict, Etching, Rune, SpacedRune};
-use postgres::Row;
+use tokio_postgres::Row;
 
 pub enum DbLedgerOperation {
     Mint,

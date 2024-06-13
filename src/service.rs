@@ -1,8 +1,8 @@
 use std::sync::mpsc::channel;
 
 use crate::config::Config;
-use crate::db::init_db;
 use crate::db::index_cache::IndexCache;
+use crate::db::init_db;
 use bitcoin::absolute::LockTime;
 use bitcoin::transaction::TxOut;
 use bitcoin::ScriptBuf;
@@ -151,6 +151,7 @@ pub async fn handle_block_processing(block: &mut BitcoinBlockData, ctx: &Context
 
     let mut db_tx = pg_client
         .transaction()
+        .await
         .expect("unable to begin pg transaction");
     // TODO: Create outside of this fn
     let mut memory_cache = IndexCache::new();
@@ -190,7 +191,7 @@ pub async fn handle_block_processing(block: &mut BitcoinBlockData, ctx: &Context
                             &tx.transaction_identifier.hash,
                             &mut db_tx,
                             ctx,
-                        );
+                        ).await;
                     }
                     for edict in data.edicts.iter() {
                         memory_cache.insert_edict(
@@ -201,7 +202,7 @@ pub async fn handle_block_processing(block: &mut BitcoinBlockData, ctx: &Context
                             &"test".to_string(),
                             &mut db_tx,
                             ctx,
-                        );
+                        ).await;
                     }
                 }
                 Artifact::Cenotaph(data) => {

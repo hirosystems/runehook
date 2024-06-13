@@ -50,7 +50,7 @@ impl IndexCache {
         block_height: u64,
         tx_index: u32,
         tx_id: &String,
-        _db_tx: &Transaction,
+        _db_tx: &mut Transaction<'_>,
         _ctx: &Context,
     ) {
         self.max_rune_number += 1;
@@ -70,7 +70,7 @@ impl IndexCache {
         tx_index: u32,
         tx_id: &String,
         address: &String,
-        db_tx: &mut Transaction,
+        db_tx: &mut Transaction<'_>,
         ctx: &Context,
     ) {
         let Some(db_rune) = self.get_rune_by_rune_id(edict.id, db_tx, ctx).await else {
@@ -88,12 +88,7 @@ impl IndexCache {
         ));
     }
 
-    async fn get_rune_by_rune_id(
-        &mut self,
-        rune_id: RuneId,
-        db_tx: &Transaction,
-        ctx: &Context,
-    ) -> Option<DbRune> {
+    async fn get_rune_by_rune_id(&mut self, rune_id: RuneId, db_tx: &mut Transaction<'_>, ctx: &Context) -> Option<DbRune> {
         get_rune_by_rune_id(rune_id, db_tx, ctx).await
     }
 }
