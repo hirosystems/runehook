@@ -27,7 +27,8 @@ clap_generate = { version = "3.0.3" }
 tokio-postgres = "0.7.10"
 tokio = { version = "1.38.0", features = ["rt-multi-thread", "macros"] }
 refinery = { version = "0.8", features = ["tokio-postgres"] }
-rust_decimal = { version = "1.35", features = ["db-tokio-postgres"] }
+num-bigint = "0.4.5"
+num-traits = "0.2.14"
 
 [dev-dependencies]
 test-case = "3.1.0"
