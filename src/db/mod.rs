@@ -21,7 +21,11 @@ pub async fn init_db(ctx: &Context) -> Result<Client, Error> {
     });
 
     info!(ctx.expect_logger(), "Running postgres migrations");
-    match migrations::runner().run_async(&mut client).await {
+    match migrations::runner()
+        .set_migration_table_name("pgmigrations")
+        .run_async(&mut client)
+        .await
+    {
         Ok(_) => {}
         Err(e) => {
             error!(
@@ -32,29 +36,7 @@ pub async fn init_db(ctx: &Context) -> Result<Client, Error> {
         }
     };
     info!(ctx.expect_logger(), "Postgres migrations complete");
-    // Insert default UNCOMMON•GOODS rune
-    // let rune = SpacedRune::from_str("UNCOMMON•GOODS").unwrap();
-    // let _ = insert_etching(
-    //     &Etching {
-    //         divisibility: Some(0),
-    //         premine: Some(0),
-    //         rune: Some(rune.rune),
-    //         spacers: Some(rune.spacers),
-    //         symbol: Some('⧉'),
-    //         terms: Some(Terms {
-    //             amount: Some(1),
-    //             cap: Some(u128::max_value()),
-    //             height: (Some(840000), Some(1050000)),
-    //             offset: (None, None),
-    //         }),
-    //         turbo: false,
-    //     },
-    //     1,
-    //     0,
-    //     &"".to_string(),
-    //     &mut client,
-    //     ctx,
-    // );
+
     Ok(client)
 }
 
@@ -99,9 +81,7 @@ pub async fn insert_rune_rows(
             Err(e) => {
                 error!(
                     ctx.expect_logger(),
-                    "Error inserting rune: {:?} {:?}",
-                    e,
-                    row
+                    "Error inserting rune: {:?} {:?}", e, row
                 );
                 panic!()
             }

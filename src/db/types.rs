@@ -107,7 +107,7 @@ impl ToSql for PgNumericU128 {
         ty: &Type,
         out: &mut BytesMut,
     ) -> Result<IsNull, Box<dyn Error + Sync + Send>> {
-        Decimal::from_u128(self.0).to_sql(ty, out)
+        Decimal::from_str_exact(&self.0.to_string())?.to_sql(ty, out)
     }
 
     fn accepts(ty: &Type) -> bool {
