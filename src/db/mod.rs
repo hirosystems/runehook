@@ -8,6 +8,7 @@ use types::{PgBigIntU32, PgNumericU64};
 pub mod index_cache;
 pub mod models;
 pub mod types;
+pub mod index;
 
 embed_migrations!("migrations");
 
@@ -101,8 +102,19 @@ pub async fn insert_rune_rows(
 //     //
 // }
 
+pub async fn get_max_rune_number(db_tx: &mut Transaction<'_>, _ctx: &Context) -> u32 {
+    let rows = db_tx
+        .query("SELECT MAX(number) AS max FROM runes", &[])
+        .await
+        .expect("error getting max rune number");
+    let Some(row) = rows.get(0) else {
+        return 0;
+    };
+    row.get("max")
+}
+
 pub async fn get_rune_by_rune_id(
-    rune_id: RuneId,
+    rune_id: &RuneId,
     db_tx: &mut Transaction<'_>,
     ctx: &Context,
 ) -> Option<DbRune> {

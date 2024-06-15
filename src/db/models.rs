@@ -1,7 +1,7 @@
-use ordinals::{Edict, Etching, Rune, SpacedRune};
+use ordinals::{Edict, Etching, Rune, RuneId, SpacedRune};
 use tokio_postgres::Row;
 
-use super::types::{PgNumericU128, PgBigIntU32, PgNumericU64, PgSmallIntU8};
+use super::types::{PgBigIntU32, PgNumericU128, PgNumericU64, PgSmallIntU8};
 
 /// A value from the `ledger_operation` enum type.
 #[derive(Debug)]
@@ -38,7 +38,7 @@ impl std::str::FromStr for DbLedgerOperation {
 }
 
 /// A row in the `runes` table.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DbRune {
     pub name: String,
     pub number: PgBigIntU32,
@@ -95,9 +95,18 @@ impl DbRune {
             block_height: PgNumericU64(block_height),
             tx_index: PgBigIntU32(tx_index),
             tx_id: tx_id[2..].to_string(),
-            divisibility: etching.divisibility.map(|i| PgSmallIntU8(i)).unwrap_or(PgSmallIntU8(0)),
-            premine: etching.premine.map(|i| PgNumericU128(i)).unwrap_or(PgNumericU128(0)),
-            symbol: etching.symbol.map(|i| i.to_string()).unwrap_or("¤".to_string()),
+            divisibility: etching
+                .divisibility
+                .map(|i| PgSmallIntU8(i))
+                .unwrap_or(PgSmallIntU8(0)),
+            premine: etching
+                .premine
+                .map(|i| PgNumericU128(i))
+                .unwrap_or(PgNumericU128(0)),
+            symbol: etching
+                .symbol
+                .map(|i| i.to_string())
+                .unwrap_or("¤".to_string()),
             terms_amount,
             terms_cap,
             terms_height_start,
@@ -131,6 +140,13 @@ impl DbRune {
             burned: row.get("burned"),
         }
     }
+
+    pub fn rune_id(&self) -> RuneId {
+        RuneId {
+            block: self.block_height.0,
+            tx: self.tx_index.0,
+        }
+    }
 }
 
 /// A row in the `ledger` table.
@@ -146,9 +162,9 @@ pub struct DbLedgerEntry {
 }
 
 impl DbLedgerEntry {
-    pub fn from_edict(
-        edict: &Edict,
-        db_rune: &DbRune,
+    pub fn from_values(
+        amount: u128,
+        rune_number: u32,
         block_height: u64,
         tx_index: u32,
         tx_id: &String,
@@ -156,12 +172,12 @@ impl DbLedgerEntry {
         operation: DbLedgerOperation,
     ) -> Self {
         DbLedgerEntry {
-            rune_number: db_rune.number,
+            rune_number: PgBigIntU32(rune_number),
             block_height: PgNumericU64(block_height),
             tx_index: PgBigIntU32(tx_index),
             tx_id: tx_id[2..].to_string(),
             address: address.clone(),
-            amount: PgNumericU128(edict.amount),
+            amount: PgNumericU128(amount),
             operation,
         }
     }

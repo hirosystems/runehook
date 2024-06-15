@@ -1,14 +1,8 @@
 use std::sync::mpsc::channel;
 
 use crate::config::Config;
-use crate::db::index_cache::IndexCache;
 use crate::db::init_db;
-use bitcoin::absolute::LockTime;
-use bitcoin::transaction::TxOut;
-use bitcoin::ScriptBuf;
-use bitcoin::Transaction;
 use chainhook_sdk::observer::BitcoinBlockDataCached;
-use chainhook_sdk::types::BitcoinBlockData;
 use chainhook_sdk::types::BlockIdentifier;
 use chainhook_sdk::{
     observer::{start_event_observer, ObserverEvent, ObserverSidecar},
@@ -16,9 +10,6 @@ use chainhook_sdk::{
     utils::Context,
 };
 use crossbeam_channel::select;
-use ordinals::Artifact;
-use ordinals::Runestone;
-use tokio_postgres::Client;
 
 pub async fn start_service(config: &Config, ctx: &Context) -> Result<(), String> {
     let ctx_moved = ctx.clone();
@@ -130,95 +121,6 @@ pub fn set_up_observer_sidecar_runloop(
     });
 
     Ok(observer_sidecar)
-}
-
-pub async fn handle_block_processing(pg_client: &mut Client, block: &mut BitcoinBlockData, ctx: &Context) {
-    info!(ctx.expect_logger(), "Processing block {}", block.block_identifier.index);
-    let mut db_tx = pg_client
-        .transaction()
-        .await
-        .expect("unable to begin pg transaction");
-    // TODO: Create outside of this fn
-    let mut memory_cache = IndexCache::new();
-    for tx in block.transactions.iter() {
-        let transaction = Transaction {
-            version: 2,
-            lock_time: LockTime::from_time(block.timestamp).unwrap(),
-            input: vec![],
-            output: tx
-                .metadata
-                .outputs
-                .iter()
-                .map(|output| TxOut {
-                    value: output.value,
-                    script_pubkey: ScriptBuf::from_bytes(output.get_script_pubkey_bytes()),
-                })
-                .collect(),
-        };
-        let runestone_opt = Runestone::decipher(&transaction);
-
-        if let Some(artifact) = runestone_opt {
-            match artifact {
-                Artifact::Runestone(runestone) => {
-                    // ctx.try_log(|logger| {
-                    //     info!(
-                    //         logger,
-                    //         "Block #{} - detected runestone {:?}",
-                    //         block.block_identifier.index,
-                    //         runestone
-                    //     )
-                    // });
-                    if let Some(etching) = runestone.etching {
-                        memory_cache.insert_etching(
-                            &etching,
-                            block.block_identifier.index,
-                            tx.metadata.index,
-                            &tx.transaction_identifier.hash,
-                            &mut db_tx,
-                            ctx,
-                        ).await;
-                    }
-                    for edict in runestone.edicts.iter() {
-                        // if let Some(pointer) = runestone.pointer {
-                        //     let output = &tx.metadata.outputs[pointer as usize];
-                        //     let bytes = hex::decode(&output.script_pubkey).unwrap();
-                        //     let script = ScriptBuf::from_bytes(bytes);
-                        //     script.is_op_return();
-                        // }
-                        // for vout in tx.metadata.outputs.iter().fil
-                        memory_cache.insert_edict(
-                            edict,
-                            block.block_identifier.index,
-                            tx.metadata.index,
-                            &tx.transaction_identifier.hash,
-                            &"test_sender".to_string(),
-                            &"test_receiver".to_string(),
-                            &mut db_tx,
-                            ctx,
-                        ).await;
-                    }
-                }
-                Artifact::Cenotaph(data) => {
-                    ctx.try_log(|logger| {
-                        info!(
-                            logger,
-                            "Block #{} - detected cenotaph {:?}",
-                            block.block_identifier.index,
-                            data
-                        )
-                    });
-                }
-            }
-        }
-    }
-    ctx.try_log(|logger| {
-        info!(
-            logger,
-            "flushing cache",
-        )
-    });
-    memory_cache.db_cache.flush(&mut db_tx, ctx).await;
-    let _ = db_tx.commit().await;
 }
 
 pub fn chainhook_sidecar_mutate_blocks(

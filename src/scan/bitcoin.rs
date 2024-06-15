@@ -1,6 +1,7 @@
 use crate::config::Config;
-use crate::db::init_db;
-use crate::service::handle_block_processing;
+use crate::db::index::index_block;
+use crate::db::index_cache::IndexCache;
+use crate::db::{get_max_rune_number, init_db};
 use chainhook_sdk::bitcoincore_rpc::RpcApi;
 use chainhook_sdk::bitcoincore_rpc::{Auth, Client};
 use chainhook_sdk::chainhooks::bitcoin::{
@@ -85,17 +86,13 @@ pub async fn scan_bitcoin_chainstate_via_rpc_using_predicate(
     let mut number_of_blocks_scanned = 0;
     let http_client = build_http_client();
 
-    let mut pg_client = match init_db(ctx).await {
-        Ok(res) => res,
-        Err(e) => {
-            error!(
-                ctx.expect_logger(),
-                "Init DB error: {}",
-                e.to_string(),
-            );
-            std::process::exit(1);
-        }
-    };
+    let mut pg_client = init_db(ctx).await.expect("Error initializing postgres db");
+
+    let mut db_tx = pg_client.transaction().await.expect("Error creating postgres transaction");
+    let max_rune_number = get_max_rune_number(&mut db_tx, ctx).await;
+    let mut index_cache = IndexCache::new(5000, max_rune_number);
+    let _ = db_tx.rollback().await;
+
     while let Some(current_block_height) = block_heights_to_scan.pop_front() {
         number_of_blocks_scanned += 1;
 
@@ -114,7 +111,7 @@ pub async fn scan_bitcoin_chainstate_via_rpc_using_predicate(
             standardize_bitcoin_block(raw_block, &config.event_observer.bitcoin_network, ctx)
                 .unwrap();
 
-        handle_block_processing(&mut pg_client, &mut block, ctx).await;
+        index_block(&mut pg_client, &mut index_cache, &mut block, ctx).await;
 
         match process_block_with_predicates(
             block,
