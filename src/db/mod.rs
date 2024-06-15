@@ -1,14 +1,14 @@
 use chainhook_sdk::utils::Context;
-use models::DbRune;
+use models::{DbLedgerEntry, DbRune};
 use ordinals::RuneId;
 use refinery::embed_migrations;
 use tokio_postgres::{Client, Error, NoTls, Transaction};
 use types::{PgBigIntU32, PgNumericU64};
 
+pub mod index;
 pub mod index_cache;
 pub mod models;
 pub mod types;
-pub mod index;
 
 embed_migrations!("migrations");
 
@@ -46,7 +46,6 @@ pub async fn insert_rune_rows(
     db_tx: &mut Transaction<'_>,
     ctx: &Context,
 ) -> Result<bool, Error> {
-    info!(ctx.expect_logger(), "Inserting {} rows", rows.len());
     let stmt = db_tx.prepare(
         "INSERT INTO runes
         (number, name, block_height, tx_index, tx_id, divisibility, premine, symbol, terms_amount, terms_cap, terms_height_start,
@@ -91,16 +90,45 @@ pub async fn insert_rune_rows(
     Ok(true)
 }
 
-// pub fn insert_edict(
-//     edict: &Edict,
-//     block_height: u64,
-//     tx_index: u32,
-//     tx_id: &String,
-//     client: &mut Client,
-//     ctx: &Context,
-// ) -> Result<bool, Error> {
-//     //
-// }
+pub async fn insert_ledger_entries(
+    rows: &Vec<DbLedgerEntry>,
+    db_tx: &mut Transaction<'_>,
+    ctx: &Context,
+) -> Result<bool, Error> {
+    let stmt = db_tx.prepare(
+        "INSERT INTO ledger
+        (rune_number, block_height, tx_index, tx_id, address, amount, operation)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        ON CONFLICT (name) DO NOTHING"
+    ).await.expect("Unable to prepare statement");
+    for row in rows.iter() {
+        match db_tx
+            .execute(
+                &stmt,
+                &[
+                    &row.rune_number,
+                    &row.block_height,
+                    &row.tx_index,
+                    &row.tx_id,
+                    &row.address,
+                    &row.amount,
+                    &row.operation,
+                ],
+            )
+            .await
+        {
+            Ok(_) => {}
+            Err(e) => {
+                error!(
+                    ctx.expect_logger(),
+                    "Error inserting ledger entry: {:?} {:?}", e, row
+                );
+                panic!()
+            }
+        };
+    }
+    Ok(true)
+}
 
 pub async fn get_max_rune_number(db_tx: &mut Transaction<'_>, _ctx: &Context) -> u32 {
     let rows = db_tx

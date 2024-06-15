@@ -69,7 +69,7 @@ pub async fn index_block(
         let block_height = block.block_identifier.index;
         let tx_index = tx.metadata.index;
         let tx_id = &tx.transaction_identifier.hash;
-        index_cache.reset_tx_cache(block_height, tx_index, tx_id);
+        index_cache.begin_transaction(block_height, tx_index, tx_id);
         if let Some(artifact) = Runestone::decipher(&transaction) {
             match artifact {
                 Artifact::Runestone(runestone) => {
@@ -93,7 +93,7 @@ pub async fn index_block(
                 }
             }
         }
-        index_cache.tx_cache.allocate_remaining_balances();
+        index_cache.end_transaction();
     }
     index_cache.db_cache.flush(&mut db_tx, ctx).await;
     db_tx

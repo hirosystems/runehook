@@ -1,15 +1,15 @@
 use std::{collections::HashMap, num::NonZeroUsize};
 
-use bitcoin::ScriptBuf;
+use bitcoin::{Address, ScriptBuf};
 use chainhook_sdk::{types::bitcoin::TxOut, utils::Context};
 use lru::LruCache;
 use ordinals::{Cenotaph, Edict, Etching, RuneId, Runestone};
 use tokio_postgres::Transaction;
 
 use super::{
-    get_rune_by_rune_id, insert_rune_rows,
+    get_rune_by_rune_id, insert_ledger_entries, insert_rune_rows,
     models::{DbLedgerEntry, DbLedgerOperation, DbRune},
-    types::PgNumericU128,
+    types::{PgBigIntU32, PgNumericU128, PgNumericU64},
 };
 
 /// Holds rows that have yet to be inserted into the database.
@@ -31,18 +31,20 @@ impl DbCache {
             let _ = insert_rune_rows(&self.runes, db_tx, ctx).await;
         }
         if self.ledger_entries.len() > 0 {
-            //
+            let _ = insert_ledger_entries(&self.ledger_entries, db_tx, ctx).await;
         }
     }
 }
 
 /// Holds cached data relevant to a single transaction during indexing.
-pub struct TxCache {
+pub struct TransactionCache {
     block_height: u64,
     tx_index: u32,
     tx_id: String,
     /// Rune etched during this transaction
     etching: Option<DbRune>,
+    /// Runes affected by this transaction
+    runes: HashMap<RuneId, DbRune>,
     /// The output where all unallocated runes will be transferred
     pointer: Option<u32>,
     /// Holds unallocated runes premined or minted in the current transaction being processed
@@ -55,13 +57,14 @@ pub struct TxCache {
     output_rune_balances: HashMap<u32, HashMap<RuneId, u128>>,
 }
 
-impl TxCache {
+impl TransactionCache {
     pub fn new(block_height: u64, tx_index: u32, tx_id: &String) -> Self {
-        TxCache {
+        TransactionCache {
             block_height,
             tx_index,
             tx_id: tx_id.clone(),
             etching: None,
+            runes: HashMap::new(),
             pointer: None,
             unallocated_runes: HashMap::new(),
             eligible_outputs: HashMap::new(),
@@ -85,13 +88,16 @@ impl TxCache {
 
     /// Moves remaining unallocated runes to the correct output depending on runestone configuration. Must be called once
     /// processing for a transaction is complete.
-    pub fn allocate_remaining_balances(&mut self) {
+    pub fn allocate_remaining_balances(&mut self, db_cache: &mut DbCache) {
         let output = self.pointer.unwrap_or(0);
         for (rune_id, unallocated) in self.unallocated_runes.clone().iter() {
-            self.change_output_rune_balance(output, rune_id, *unallocated);
+            let Some(db_rune) = self.runes.get(rune_id).cloned() else {
+                // log
+                continue;
+            };
+            self.change_output_rune_balance(output, rune_id, &db_rune, *unallocated, db_cache);
         }
         self.unallocated_runes.clear();
-        // TODO: db entries
     }
 
     fn apply_etching(
@@ -113,6 +119,7 @@ impl TxCache {
         );
         db_cache.runes.push(db_rune.clone());
         self.etching = Some(db_rune.clone());
+        self.runes.insert(rune_id.clone(), db_rune.clone());
         self.change_unallocated_rune_balance(&rune_id, etching.premine.unwrap_or(0));
         (rune_id, db_rune)
     }
@@ -121,6 +128,7 @@ impl TxCache {
         // TODO: What's the default mint amount if none was provided?
         let mint_amount = db_rune.terms_amount.unwrap_or(PgNumericU128(0));
         self.change_unallocated_rune_balance(rune_id, mint_amount.0);
+        self.runes.insert(rune_id.clone(), db_rune.clone());
         db_cache.ledger_entries.push(DbLedgerEntry::from_values(
             mint_amount.0,
             db_rune.number.0,
@@ -132,7 +140,7 @@ impl TxCache {
         ));
     }
 
-    fn apply_edict(&mut self, edict: &Edict, db_cache: &mut DbCache) {
+    fn apply_edict(&mut self, edict: &Edict, db_rune: &DbRune, db_cache: &mut DbCache) {
         let rune_id = if edict.id.block == 0 && edict.id.tx == 0 {
             let Some(etching) = self.etching.as_ref() else {
                 // unreachable?
@@ -166,14 +174,22 @@ impl TxCache {
                             extra = 1;
                             remainder -= 1;
                         }
-                        self.change_output_rune_balance(output, &rune_id, per_output + extra);
+                        self.change_output_rune_balance(
+                            output,
+                            &rune_id,
+                            db_rune,
+                            per_output + extra,
+                            db_cache,
+                        );
                     }
                     unallocated = 0;
                 } else {
                     // Give `amount` to all outputs or until unallocated runs out.
                     for output in output_keys {
                         let amount = edict.amount.min(unallocated);
-                        self.change_output_rune_balance(output, &rune_id, amount);
+                        self.change_output_rune_balance(
+                            output, &rune_id, db_rune, amount, db_cache,
+                        );
                         unallocated -= amount;
                     }
                 }
@@ -185,14 +201,14 @@ impl TxCache {
                     amount = unallocated;
                     unallocated = 0;
                 }
-                self.change_output_rune_balance(edict.output, &rune_id, amount);
+                self.change_output_rune_balance(edict.output, &rune_id, db_rune, amount, db_cache);
             }
             _ => {
                 // TODO: what now?
             }
         }
+        self.runes.insert(rune_id.clone(), db_rune.clone());
         self.unallocated_runes.insert(rune_id.clone(), unallocated);
-        // TODO: db entries
     }
 
     fn change_unallocated_rune_balance(&mut self, rune_id: &RuneId, delta: u128) {
@@ -204,7 +220,14 @@ impl TxCache {
         }
     }
 
-    fn change_output_rune_balance(&mut self, output: u32, rune_id: &RuneId, delta: u128) {
+    fn change_output_rune_balance(
+        &mut self,
+        output: u32,
+        rune_id: &RuneId,
+        db_rune: &DbRune,
+        delta: u128,
+        db_cache: &mut DbCache,
+    ) {
         if let Some(pointer_bal) = self.output_rune_balances.get_mut(&output) {
             if let Some(rune_bal) = pointer_bal.get(&rune_id).copied() {
                 pointer_bal.insert(rune_id.clone(), rune_bal + delta);
@@ -216,6 +239,18 @@ impl TxCache {
             map.insert(rune_id.clone(), delta);
             self.output_rune_balances.insert(output, map);
         }
+        let script = self.eligible_outputs.get(&output).unwrap();
+        db_cache.ledger_entries.push(DbLedgerEntry {
+            rune_number: db_rune.number,
+            block_height: PgNumericU64(self.block_height),
+            tx_index: PgBigIntU32(self.tx_index),
+            tx_id: self.tx_id.clone(),
+            address: Address::from_script(script, bitcoin::Network::Bitcoin)
+                .unwrap()
+                .to_string(),
+            amount: PgNumericU128(delta),
+            operation: DbLedgerOperation::Receive,
+        });
     }
 }
 
@@ -225,7 +260,7 @@ pub struct IndexCache {
     next_rune_number: u32,
     runes: LruCache<RuneId, DbRune>,
     /// Holds a single transaction's rune cache. Must be cleared every time a new transaction is processed.
-    pub tx_cache: TxCache,
+    pub tx_cache: TransactionCache,
     pub db_cache: DbCache,
 }
 
@@ -235,13 +270,18 @@ impl IndexCache {
         IndexCache {
             next_rune_number: max_rune_number + 1,
             runes: LruCache::new(cap),
-            tx_cache: TxCache::new(1, 0, &"".to_string()),
+            tx_cache: TransactionCache::new(1, 0, &"".to_string()),
             db_cache: DbCache::new(),
         }
     }
 
-    pub fn reset_tx_cache(&mut self, block_height: u64, tx_index: u32, tx_id: &String) {
-        self.tx_cache = TxCache::new(block_height, tx_index, tx_id);
+    pub fn begin_transaction(&mut self, block_height: u64, tx_index: u32, tx_id: &String) {
+        self.tx_cache = TransactionCache::new(block_height, tx_index, tx_id);
+    }
+
+    pub fn end_transaction(&mut self) {
+        self.tx_cache
+            .allocate_remaining_balances(&mut self.db_cache);
     }
 
     pub async fn apply_etching(
@@ -276,7 +316,8 @@ impl IndexCache {
             // rune should exist?
             return;
         };
-        self.tx_cache.apply_edict(edict, &mut self.db_cache);
+        self.tx_cache
+            .apply_edict(edict, &db_rune, &mut self.db_cache);
     }
 
     pub async fn apply_cenotaph(
@@ -285,14 +326,13 @@ impl IndexCache {
         db_tx: &mut Transaction<'_>,
         ctx: &Context,
     ) {
-                            // * Cenotaphs have the following effects:
-                    //
-                    // All runes input to a transaction containing a cenotaph are burned.
-                    //
-                    // If the runestone that produced the cenotaph contained an etching, the etched rune has supply zero and is unmintable.
-                    //
-                    // If the runestone that produced the cenotaph is a mint, the mint counts against the mint cap and the minted runes are burned.
-
+        // * Cenotaphs have the following effects:
+        //
+        // All runes input to a transaction containing a cenotaph are burned.
+        //
+        // If the runestone that produced the cenotaph contained an etching, the etched rune has supply zero and is unmintable.
+        //
+        // If the runestone that produced the cenotaph is a mint, the mint counts against the mint cap and the minted runes are burned.
     }
 
     async fn get_rune_by_rune_id(
