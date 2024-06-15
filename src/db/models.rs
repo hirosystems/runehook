@@ -119,6 +119,34 @@ impl DbRune {
         }
     }
 
+    pub fn from_cenotaph_etching(
+        rune: &Rune,
+        number: u32,
+        block_height: u64,
+        tx_index: u32,
+        tx_id: &String,
+    ) -> Self {
+        DbRune {
+            name: rune.to_string(),
+            number: PgBigIntU32(number),
+            block_height: PgNumericU64(block_height),
+            tx_index: PgBigIntU32(tx_index),
+            tx_id: tx_id[2..].to_string(),
+            divisibility: PgSmallIntU8(0),
+            premine: PgNumericU128(0),
+            symbol: "".to_string(),
+            terms_amount: None,
+            terms_cap: None,
+            terms_height_start: None,
+            terms_height_end: None,
+            terms_offset_start: None,
+            terms_offset_end: None,
+            turbo: false,
+            minted: PgNumericU128(0),
+            burned: PgNumericU128(0),
+        }
+    }
+
     pub fn from_pg_row(row: &Row) -> Self {
         DbRune {
             name: row.get("name"),

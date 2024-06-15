@@ -58,7 +58,7 @@ pub async fn index_block(
 ) {
     info!(
         ctx.expect_logger(),
-        "Processing block {}", block.block_identifier.index
+        "Indexing block {}", block.block_identifier.index
     );
     let mut db_tx = pg_client
         .transaction()
@@ -89,7 +89,12 @@ pub async fn index_block(
                     }
                 }
                 Artifact::Cenotaph(cenotaph) => {
-                    index_cache.apply_cenotaph(&cenotaph, &mut db_tx, ctx).await;
+                    if let Some(etching) = cenotaph.etching {
+                        index_cache.apply_cenotaph_etching(&etching, &mut db_tx, ctx).await;
+                    }
+                    if let Some(mint_rune_id) = cenotaph.mint {
+                        //
+                    }
                 }
             }
         }

@@ -3,7 +3,7 @@ use std::{collections::HashMap, num::NonZeroUsize};
 use bitcoin::{Address, ScriptBuf};
 use chainhook_sdk::{types::bitcoin::TxOut, utils::Context};
 use lru::LruCache;
-use ordinals::{Cenotaph, Edict, Etching, RuneId, Runestone};
+use ordinals::{Cenotaph, Edict, Etching, Rune, RuneId, Runestone};
 use tokio_postgres::Transaction;
 
 use super::{
@@ -121,6 +121,31 @@ impl TransactionCache {
         self.etching = Some(db_rune.clone());
         self.runes.insert(rune_id.clone(), db_rune.clone());
         self.change_unallocated_rune_balance(&rune_id, etching.premine.unwrap_or(0));
+        (rune_id, db_rune)
+    }
+
+    fn apply_cenotaph_etching(
+        &mut self,
+        rune: &Rune,
+        number: u32,
+        db_cache: &mut DbCache,
+    ) -> (RuneId, DbRune) {
+        let rune_id = RuneId {
+            block: self.block_height,
+            tx: self.tx_index,
+        };
+        // If the runestone that produced the cenotaph contained an etching, the etched rune has supply zero and is unmintable.
+        let db_rune = DbRune::from_cenotaph_etching(
+            rune,
+            number,
+            self.block_height,
+            self.tx_index,
+            &self.tx_id,
+        );
+        db_cache.runes.push(db_rune.clone());
+        self.etching = Some(db_rune.clone());
+        self.runes.insert(rune_id.clone(), db_rune.clone());
+        self.change_unallocated_rune_balance(&rune_id, 0);
         (rune_id, db_rune)
     }
 
@@ -320,17 +345,21 @@ impl IndexCache {
             .apply_edict(edict, &db_rune, &mut self.db_cache);
     }
 
-    pub async fn apply_cenotaph(
+    pub async fn apply_cenotaph_etching(
         &mut self,
-        cenotaph: &Cenotaph,
-        db_tx: &mut Transaction<'_>,
-        ctx: &Context,
+        rune: &Rune,
+        _db_tx: &mut Transaction<'_>,
+        _ctx: &Context,
     ) {
+        let (rune_id, db_rune) =
+            self.tx_cache
+                .apply_cenotaph_etching(rune, self.next_rune_number, &mut self.db_cache);
+        self.runes.put(rune_id, db_rune);
+        self.next_rune_number += 1;
         // * Cenotaphs have the following effects:
         //
         // All runes input to a transaction containing a cenotaph are burned.
         //
-        // If the runestone that produced the cenotaph contained an etching, the etched rune has supply zero and is unmintable.
         //
         // If the runestone that produced the cenotaph is a mint, the mint counts against the mint cap and the minted runes are burned.
     }
