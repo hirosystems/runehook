@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use bitcoin::{Address, ScriptBuf};
-use chainhook_sdk::types::bitcoin::TxOut;
-use ordinals::{Edict, Etching, Rune, RuneId, Runestone};
+use chainhook_sdk::types::bitcoin::{TxIn, TxOut};
+use ordinals::{Cenotaph, Edict, Etching, Rune, RuneId, Runestone};
 
 use crate::db::{
     models::{DbLedgerEntry, DbLedgerOperation, DbRune},
@@ -48,6 +48,11 @@ impl TransactionCache {
         }
     }
 
+    /// Takes the input runes and moves them to the unallocated balance for edicts.
+    pub fn unallocate_input_rune_balance(&mut self, tx_inputs: &Vec<TxIn>) {
+        todo!()
+    }
+
     pub fn apply_runestone_pointer(&mut self, runestone: &Runestone, tx_outputs: &Vec<TxOut>) {
         self.pointer = runestone.pointer;
         self.total_outputs = tx_outputs.len() as u32;
@@ -59,6 +64,10 @@ impl TransactionCache {
                 self.eligible_outputs.insert(i as u32, script);
             }
         }
+    }
+
+    pub fn apply_cenotaph_input_burn(&mut self, cenotaph: &Cenotaph) {
+        todo!()
     }
 
     /// Moves remaining unallocated runes to the correct output depending on runestone configuration. Must be called once
@@ -139,6 +148,22 @@ impl TransactionCache {
             DbLedgerOperation::Mint,
         ));
         // TODO: Update rune minted total and number of mints
+    }
+
+    pub fn apply_cenotaph_mint(&mut self, rune_id: &RuneId, db_rune: &DbRune, db_cache: &mut DbCache) {
+        // TODO: What's the default mint amount if none was provided?
+        let mint_amount = db_rune.terms_amount.unwrap_or(PgNumericU128(0));
+        self.runes.insert(rune_id.clone(), db_rune.clone());
+        db_cache.ledger_entries.push(DbLedgerEntry::from_values(
+            mint_amount.0,
+            db_rune.number.0,
+            self.block_height,
+            self.tx_index,
+            &self.tx_id,
+            &"".to_string(),
+            DbLedgerOperation::Burn,
+        ));
+        // TODO: Update rune minted+burned total and number of mints+burns
     }
 
     pub fn apply_edict(&mut self, edict: &Edict, db_rune: &DbRune, db_cache: &mut DbCache) {

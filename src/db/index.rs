@@ -24,20 +24,21 @@ fn bitcoin_tx_from_chainhook_tx(
     Transaction {
         version: 2,
         lock_time: LockTime::from_time(block.timestamp).unwrap(),
-        input: tx
-            .metadata
-            .inputs
-            .iter()
-            .map(|input| TxIn {
-                previous_output: OutPoint {
-                    txid: Txid::from_str(input.previous_output.txid.hash.as_str()).unwrap(),
-                    vout: input.previous_output.vout,
-                },
-                script_sig: ScriptBuf::from_bytes(hex::decode(&input.script_sig[2..]).unwrap()),
-                sequence: Sequence(input.sequence),
-                witness: Witness::new(), // We don't need this for runes
-            })
-            .collect(),
+        input: vec![],
+        // input: tx
+        //     .metadata
+        //     .inputs
+        //     .iter()
+        //     .map(|input| TxIn {
+        //         previous_output: OutPoint {
+        //             txid: Txid::from_str(input.previous_output.txid.hash.as_str()).unwrap(),
+        //             vout: input.previous_output.vout,
+        //         },
+        //         script_sig: ScriptBuf::from_bytes(hex::decode(&input.script_sig[2..]).unwrap()),
+        //         sequence: Sequence(input.sequence),
+        //         witness: Witness::new(), // We don't need this for runes
+        //     })
+        //     .collect(),
         output: tx
             .metadata
             .outputs
@@ -69,7 +70,7 @@ pub async fn index_block(
         let block_height = block.block_identifier.index;
         let tx_index = tx.metadata.index;
         let tx_id = &tx.transaction_identifier.hash;
-        index_cache.begin_transaction(block_height, tx_index, tx_id);
+        index_cache.begin_transaction(block_height, tx_index, tx_id, &tx.metadata.inputs);
         if let Some(artifact) = Runestone::decipher(&transaction) {
             match artifact {
                 Artifact::Runestone(runestone) => {
@@ -87,13 +88,16 @@ pub async fn index_block(
                     }
                 }
                 Artifact::Cenotaph(cenotaph) => {
+                    index_cache.tx_cache.apply_cenotaph_input_burn(&cenotaph);
                     if let Some(etching) = cenotaph.etching {
                         index_cache
                             .apply_cenotaph_etching(&etching, &mut db_tx, ctx)
                             .await;
                     }
                     if let Some(mint_rune_id) = cenotaph.mint {
-                        //
+                        index_cache
+                            .apply_cenotaph_mint(&mint_rune_id, &mut db_tx, ctx)
+                            .await;
                     }
                 }
             }
