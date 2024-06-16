@@ -15,7 +15,7 @@ use ordinals::Artifact;
 use ordinals::Runestone;
 use tokio_postgres::Client;
 
-use super::index_cache::IndexCache;
+use super::cache::index_cache::IndexCache;
 
 fn bitcoin_tx_from_chainhook_tx(
     block: &BitcoinBlockData,
@@ -80,9 +80,7 @@ pub async fn index_block(
                         index_cache.apply_etching(&etching, &mut db_tx, ctx).await;
                     }
                     if let Some(mint_rune_id) = runestone.mint {
-                        index_cache
-                            .apply_mint(&mint_rune_id, &mut db_tx, ctx)
-                            .await;
+                        index_cache.apply_mint(&mint_rune_id, &mut db_tx, ctx).await;
                     }
                     for edict in runestone.edicts.iter() {
                         index_cache.apply_edict(edict, &mut db_tx, ctx).await;
@@ -90,7 +88,9 @@ pub async fn index_block(
                 }
                 Artifact::Cenotaph(cenotaph) => {
                     if let Some(etching) = cenotaph.etching {
-                        index_cache.apply_cenotaph_etching(&etching, &mut db_tx, ctx).await;
+                        index_cache
+                            .apply_cenotaph_etching(&etching, &mut db_tx, ctx)
+                            .await;
                     }
                     if let Some(mint_rune_id) = cenotaph.mint {
                         //

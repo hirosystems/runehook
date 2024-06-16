@@ -1,40 +1,15 @@
-use std::{collections::HashMap, num::NonZeroUsize};
+use std::collections::HashMap;
 
 use bitcoin::{Address, ScriptBuf};
-use chainhook_sdk::{types::bitcoin::TxOut, utils::Context};
-use lru::LruCache;
-use ordinals::{Cenotaph, Edict, Etching, Rune, RuneId, Runestone};
-use tokio_postgres::Transaction;
+use chainhook_sdk::types::bitcoin::TxOut;
+use ordinals::{Edict, Etching, Rune, RuneId, Runestone};
 
-use super::{
-    get_rune_by_rune_id, insert_ledger_entries, insert_rune_rows,
+use crate::db::{
     models::{DbLedgerEntry, DbLedgerOperation, DbRune},
     types::{PgBigIntU32, PgNumericU128, PgNumericU64},
 };
 
-/// Holds rows that have yet to be inserted into the database.
-pub struct DbCache {
-    pub runes: Vec<DbRune>,
-    pub ledger_entries: Vec<DbLedgerEntry>,
-}
-
-impl DbCache {
-    fn new() -> Self {
-        DbCache {
-            runes: Vec::new(),
-            ledger_entries: Vec::new(),
-        }
-    }
-
-    pub async fn flush(&mut self, db_tx: &mut Transaction<'_>, ctx: &Context) {
-        if self.runes.len() > 0 {
-            let _ = insert_rune_rows(&self.runes, db_tx, ctx).await;
-        }
-        if self.ledger_entries.len() > 0 {
-            let _ = insert_ledger_entries(&self.ledger_entries, db_tx, ctx).await;
-        }
-    }
-}
+use super::db_cache::DbCache;
 
 /// Holds cached data relevant to a single transaction during indexing.
 pub struct TransactionCache {
@@ -42,7 +17,7 @@ pub struct TransactionCache {
     tx_index: u32,
     tx_id: String,
     /// Rune etched during this transaction
-    etching: Option<DbRune>,
+    pub etching: Option<DbRune>,
     /// Runes affected by this transaction
     runes: HashMap<RuneId, DbRune>,
     /// The output where all unallocated runes will be transferred
@@ -100,7 +75,7 @@ impl TransactionCache {
         self.unallocated_runes.clear();
     }
 
-    fn apply_etching(
+    pub fn apply_etching(
         &mut self,
         etching: &Etching,
         number: u32,
@@ -124,7 +99,7 @@ impl TransactionCache {
         (rune_id, db_rune)
     }
 
-    fn apply_cenotaph_etching(
+    pub fn apply_cenotaph_etching(
         &mut self,
         rune: &Rune,
         number: u32,
@@ -149,7 +124,7 @@ impl TransactionCache {
         (rune_id, db_rune)
     }
 
-    fn apply_mint(&mut self, rune_id: &RuneId, db_rune: &DbRune, db_cache: &mut DbCache) {
+    pub fn apply_mint(&mut self, rune_id: &RuneId, db_rune: &DbRune, db_cache: &mut DbCache) {
         // TODO: What's the default mint amount if none was provided?
         let mint_amount = db_rune.terms_amount.unwrap_or(PgNumericU128(0));
         self.change_unallocated_rune_balance(rune_id, mint_amount.0);
@@ -163,9 +138,10 @@ impl TransactionCache {
             &"".to_string(),
             DbLedgerOperation::Mint,
         ));
+        // TODO: Update rune minted total and number of mints
     }
 
-    fn apply_edict(&mut self, edict: &Edict, db_rune: &DbRune, db_cache: &mut DbCache) {
+    pub fn apply_edict(&mut self, edict: &Edict, db_rune: &DbRune, db_cache: &mut DbCache) {
         let rune_id = if edict.id.block == 0 && edict.id.tx == 0 {
             let Some(etching) = self.etching.as_ref() else {
                 // unreachable?
@@ -276,112 +252,5 @@ impl TransactionCache {
             amount: PgNumericU128(delta),
             operation: DbLedgerOperation::Receive,
         });
-    }
-}
-
-/// Holds rune data across multiple blocks for faster computations. Processes rune events as they happen during transactions and
-/// generates database rows for later insertion.
-pub struct IndexCache {
-    next_rune_number: u32,
-    runes: LruCache<RuneId, DbRune>,
-    /// Holds a single transaction's rune cache. Must be cleared every time a new transaction is processed.
-    pub tx_cache: TransactionCache,
-    pub db_cache: DbCache,
-}
-
-impl IndexCache {
-    pub fn new(lru_cache_size: usize, max_rune_number: u32) -> Self {
-        let cap = NonZeroUsize::new(lru_cache_size).unwrap();
-        IndexCache {
-            next_rune_number: max_rune_number + 1,
-            runes: LruCache::new(cap),
-            tx_cache: TransactionCache::new(1, 0, &"".to_string()),
-            db_cache: DbCache::new(),
-        }
-    }
-
-    pub fn begin_transaction(&mut self, block_height: u64, tx_index: u32, tx_id: &String) {
-        self.tx_cache = TransactionCache::new(block_height, tx_index, tx_id);
-    }
-
-    pub fn end_transaction(&mut self) {
-        self.tx_cache
-            .allocate_remaining_balances(&mut self.db_cache);
-    }
-
-    pub async fn apply_etching(
-        &mut self,
-        etching: &Etching,
-        _db_tx: &mut Transaction<'_>,
-        _ctx: &Context,
-    ) {
-        let (rune_id, db_rune) =
-            self.tx_cache
-                .apply_etching(etching, self.next_rune_number, &mut self.db_cache);
-        self.runes.put(rune_id, db_rune);
-        self.next_rune_number += 1;
-    }
-
-    pub async fn apply_mint(
-        &mut self,
-        rune_id: &RuneId,
-        db_tx: &mut Transaction<'_>,
-        ctx: &Context,
-    ) {
-        let Some(db_rune) = self.get_rune_by_rune_id(rune_id, db_tx, ctx).await else {
-            // log
-            return;
-        };
-        self.tx_cache
-            .apply_mint(&rune_id, &db_rune, &mut self.db_cache);
-    }
-
-    pub async fn apply_edict(&mut self, edict: &Edict, db_tx: &mut Transaction<'_>, ctx: &Context) {
-        let Some(db_rune) = self.get_rune_by_rune_id(&edict.id, db_tx, ctx).await else {
-            // rune should exist?
-            return;
-        };
-        self.tx_cache
-            .apply_edict(edict, &db_rune, &mut self.db_cache);
-    }
-
-    pub async fn apply_cenotaph_etching(
-        &mut self,
-        rune: &Rune,
-        _db_tx: &mut Transaction<'_>,
-        _ctx: &Context,
-    ) {
-        let (rune_id, db_rune) =
-            self.tx_cache
-                .apply_cenotaph_etching(rune, self.next_rune_number, &mut self.db_cache);
-        self.runes.put(rune_id, db_rune);
-        self.next_rune_number += 1;
-        // * Cenotaphs have the following effects:
-        //
-        // All runes input to a transaction containing a cenotaph are burned.
-        //
-        //
-        // If the runestone that produced the cenotaph is a mint, the mint counts against the mint cap and the minted runes are burned.
-    }
-
-    async fn get_rune_by_rune_id(
-        &mut self,
-        rune_id: &RuneId,
-        db_tx: &mut Transaction<'_>,
-        ctx: &Context,
-    ) -> Option<DbRune> {
-        // Id 0:0 is used to mean the rune being etched in this transaction, if any.
-        if rune_id.block == 0 && rune_id.tx == 0 {
-            return self.tx_cache.etching.clone();
-        }
-        if let Some(cached_rune) = self.runes.get(&rune_id) {
-            return Some(cached_rune.clone());
-        }
-        // TODO: Handle cache miss
-        let Some(db_rune) = get_rune_by_rune_id(rune_id, db_tx, ctx).await else {
-            return None;
-        };
-        self.runes.put(rune_id.clone(), db_rune.clone());
-        return Some(db_rune);
     }
 }

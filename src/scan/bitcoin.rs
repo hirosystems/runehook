@@ -1,6 +1,6 @@
 use crate::config::Config;
+use crate::db::cache::index_cache::IndexCache;
 use crate::db::index::index_block;
-use crate::db::index_cache::IndexCache;
 use crate::db::{get_max_rune_number, init_db};
 use chainhook_sdk::bitcoincore_rpc::RpcApi;
 use chainhook_sdk::bitcoincore_rpc::{Auth, Client};

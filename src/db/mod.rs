@@ -6,9 +6,9 @@ use tokio_postgres::{Client, Error, NoTls, Transaction};
 use types::{PgBigIntU32, PgNumericU64};
 
 pub mod index;
-pub mod index_cache;
 pub mod models;
 pub mod types;
+pub mod cache;
 
 embed_migrations!("migrations");
 
