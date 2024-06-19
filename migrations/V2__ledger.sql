@@ -5,9 +5,11 @@ CREATE TABLE IF NOT EXISTS ledger (
     block_height            NUMERIC NOT NULL,
     tx_index                BIGINT NOT NULL,
     tx_id                   TEXT NOT NULL,
+    output                  BIGINT NOT NULL,
     address                 TEXT NOT NULL,
     amount                  NUMERIC NOT NULL,
-    operation               ledger_operation NOT NULL
+    operation               ledger_operation NOT NULL,
+    timestamp               BIGINT NOT NULL,
 );
 
 CREATE INDEX ledger_rune_number_index ON ledger (rune_number);

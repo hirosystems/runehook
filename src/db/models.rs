@@ -40,11 +40,13 @@ impl std::str::FromStr for DbLedgerOperation {
 /// A row in the `runes` table.
 #[derive(Debug, Clone)]
 pub struct DbRune {
-    pub name: String,
     pub number: PgBigIntU32,
+    pub name: String,
+    pub spaced_name: String,
     pub block_height: PgNumericU64,
     pub tx_index: PgBigIntU32,
     pub tx_id: String,
+    pub timestamp: PgBigIntU32,
     pub divisibility: PgSmallIntU8,
     pub premine: PgNumericU128,
     pub symbol: String,
@@ -66,15 +68,16 @@ impl DbRune {
         block_height: u64,
         tx_index: u32,
         tx_id: &String,
+        timestamp: u32,
     ) -> Self {
-        let name: String;
-        if let Some(rune) = etching.rune {
+        let rune = etching.rune.unwrap_or(Rune::reserved(block_height, tx_index));
+        let spaced_name = if let Some(spacers) = etching.spacers {
             let spaced_rune = SpacedRune::new(rune, etching.spacers.unwrap_or(0));
-            name = spaced_rune.to_string();
+            spaced_rune.to_string()
         } else {
-            let rune = Rune::reserved(block_height, tx_index);
-            name = rune.to_string();
-        }
+            rune.to_string()
+        };
+        let name = rune.to_string();
         let mut terms_amount = None;
         let mut terms_cap = None;
         let mut terms_height_start = None;
@@ -90,8 +93,9 @@ impl DbRune {
             terms_offset_end = terms.offset.1.map(|i| PgNumericU64(i));
         }
         DbRune {
-            name,
             number: PgBigIntU32(number),
+            name,
+            spaced_name,
             block_height: PgNumericU64(block_height),
             tx_index: PgBigIntU32(tx_index),
             tx_id: tx_id[2..].to_string(),
@@ -116,6 +120,7 @@ impl DbRune {
             turbo: etching.turbo,
             minted: PgNumericU128(0),
             burned: PgNumericU128(0),
+            timestamp: PgBigIntU32(timestamp),
         }
     }
 
@@ -125,9 +130,11 @@ impl DbRune {
         block_height: u64,
         tx_index: u32,
         tx_id: &String,
+        timestamp: u32,
     ) -> Self {
         DbRune {
             name: rune.to_string(),
+            spaced_name: rune.to_string(),
             number: PgBigIntU32(number),
             block_height: PgNumericU64(block_height),
             tx_index: PgBigIntU32(tx_index),
@@ -144,12 +151,14 @@ impl DbRune {
             turbo: false,
             minted: PgNumericU128(0),
             burned: PgNumericU128(0),
+            timestamp: PgBigIntU32(timestamp),
         }
     }
 
     pub fn from_pg_row(row: &Row) -> Self {
         DbRune {
             name: row.get("name"),
+            spaced_name: row.get("spaced_name"),
             number: row.get("number"),
             block_height: row.get("block_height"),
             tx_index: row.get("tx_index"),
@@ -166,6 +175,7 @@ impl DbRune {
             turbo: row.get("turbo"),
             minted: row.get("minted"),
             burned: row.get("burned"),
+            timestamp: row.get("timestamp"),
         }
     }
 
@@ -184,9 +194,11 @@ pub struct DbLedgerEntry {
     pub block_height: PgNumericU64,
     pub tx_index: PgBigIntU32,
     pub tx_id: String,
+    pub output: PgBigIntU32,
     pub address: String,
     pub amount: PgNumericU128,
     pub operation: DbLedgerOperation,
+    pub timestamp: PgBigIntU32,
 }
 
 impl DbLedgerEntry {
@@ -196,17 +208,21 @@ impl DbLedgerEntry {
         block_height: u64,
         tx_index: u32,
         tx_id: &String,
+        output: u32,
         address: &String,
         operation: DbLedgerOperation,
+        timestamp: u32,
     ) -> Self {
         DbLedgerEntry {
             rune_number: PgBigIntU32(rune_number),
             block_height: PgNumericU64(block_height),
             tx_index: PgBigIntU32(tx_index),
             tx_id: tx_id[2..].to_string(),
+            output: PgBigIntU32(output),
             address: address.clone(),
             amount: PgNumericU128(amount),
             operation,
+            timestamp: PgBigIntU32(timestamp),
         }
     }
 }
@@ -241,6 +257,7 @@ mod test {
             1,
             0,
             &"14e87956a6bb0f50df1515e85f1dcc4625a7e2ebeb08ab6db7d9211c7cf64fa3".to_string(),
+            0,
         );
         assert!(db_rune.name == "UNCOMMON•GOODS");
     }

@@ -1,4 +1,4 @@
-use std::num::NonZeroUsize;
+use std::{collections::HashMap, num::NonZeroUsize};
 
 use chainhook_sdk::{types::bitcoin::TxIn, utils::Context};
 use lru::LruCache;
@@ -14,6 +14,7 @@ use super::{db_cache::DbCache, transaction_cache::TransactionCache};
 pub struct IndexCache {
     next_rune_number: u32,
     runes: LruCache<RuneId, DbRune>,
+    outputs: LruCache<(String, u32), HashMap<RuneId, u128>>,
     /// Holds a single transaction's rune cache. Must be cleared every time a new transaction is processed.
     pub tx_cache: TransactionCache,
     pub db_cache: DbCache,
@@ -25,14 +26,22 @@ impl IndexCache {
         IndexCache {
             next_rune_number: max_rune_number + 1,
             runes: LruCache::new(cap),
-            tx_cache: TransactionCache::new(1, 0, &"".to_string()),
+            outputs: LruCache::new(cap),
+            tx_cache: TransactionCache::new(1, 0, &"".to_string(), 0),
             db_cache: DbCache::new(),
         }
     }
 
     /// Creates a fresh transaction index cache.
-    pub fn begin_transaction(&mut self, block_height: u64, tx_index: u32, tx_id: &String, tx_inputs: &Vec<TxIn>) {
-        self.tx_cache = TransactionCache::new(block_height, tx_index, tx_id);
+    pub fn begin_transaction(
+        &mut self,
+        block_height: u64,
+        tx_index: u32,
+        tx_id: &String,
+        timestamp: u32,
+        tx_inputs: &Vec<TxIn>,
+    ) {
+        self.tx_cache = TransactionCache::new(block_height, tx_index, tx_id, timestamp);
         self.tx_cache.unallocate_input_rune_balance(tx_inputs);
     }
 

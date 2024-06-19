@@ -6,7 +6,7 @@ use ordinals::{Cenotaph, Edict, Etching, Rune, RuneId, Runestone};
 
 use crate::db::{
     models::{DbLedgerEntry, DbLedgerOperation, DbRune},
-    types::{PgBigIntU32, PgNumericU128, PgNumericU64},
+    types::PgNumericU128,
 };
 
 use super::db_cache::DbCache;
@@ -16,12 +16,13 @@ pub struct TransactionCache {
     block_height: u64,
     tx_index: u32,
     tx_id: String,
+    timestamp: u32,
     /// Rune etched during this transaction
     pub etching: Option<DbRune>,
     /// Runes affected by this transaction
     runes: HashMap<RuneId, DbRune>,
     /// The output where all unallocated runes will be transferred
-    pointer: Option<u32>,
+    pointer: u32,
     /// Holds unallocated runes premined or minted in the current transaction being processed
     unallocated_runes: HashMap<RuneId, u128>,
     /// Non-OP_RETURN outputs in this transaction
@@ -33,14 +34,15 @@ pub struct TransactionCache {
 }
 
 impl TransactionCache {
-    pub fn new(block_height: u64, tx_index: u32, tx_id: &String) -> Self {
+    pub fn new(block_height: u64, tx_index: u32, tx_id: &String, timestamp: u32) -> Self {
         TransactionCache {
             block_height,
             tx_index,
             tx_id: tx_id.clone(),
+            timestamp,
             etching: None,
             runes: HashMap::new(),
-            pointer: None,
+            pointer: 0,
             unallocated_runes: HashMap::new(),
             eligible_outputs: HashMap::new(),
             total_outputs: 0,
@@ -50,19 +52,29 @@ impl TransactionCache {
 
     /// Takes the input runes and moves them to the unallocated balance for edicts.
     pub fn unallocate_input_rune_balance(&mut self, tx_inputs: &Vec<TxIn>) {
-        todo!()
+        for input in tx_inputs.iter() {
+            //
+        }
     }
 
     pub fn apply_runestone_pointer(&mut self, runestone: &Runestone, tx_outputs: &Vec<TxOut>) {
-        self.pointer = runestone.pointer;
         self.total_outputs = tx_outputs.len() as u32;
         // Keep a record of non-OP_RETURN outputs.
+        let mut first_eligible_output: Option<u32> = None;
         for (i, output) in tx_outputs.iter().enumerate() {
             let bytes = hex::decode(&output.script_pubkey).unwrap();
             let script = ScriptBuf::from_bytes(bytes);
             if !script.is_op_return() {
+                if first_eligible_output.is_none() {
+                    first_eligible_output = Some(i as u32);
+                }
                 self.eligible_outputs.insert(i as u32, script);
             }
+        }
+        if first_eligible_output.is_none() {
+            todo!("burn");
+        } else {
+            self.pointer = runestone.pointer.unwrap_or(first_eligible_output.unwrap());
         }
     }
 
@@ -73,13 +85,18 @@ impl TransactionCache {
     /// Moves remaining unallocated runes to the correct output depending on runestone configuration. Must be called once
     /// processing for a transaction is complete.
     pub fn allocate_remaining_balances(&mut self, db_cache: &mut DbCache) {
-        let output = self.pointer.unwrap_or(0);
         for (rune_id, unallocated) in self.unallocated_runes.clone().iter() {
             let Some(db_rune) = self.runes.get(rune_id).cloned() else {
                 // log
                 continue;
             };
-            self.change_output_rune_balance(output, rune_id, &db_rune, *unallocated, db_cache);
+            self.change_output_rune_balance(
+                self.pointer,
+                rune_id,
+                &db_rune,
+                *unallocated,
+                db_cache,
+            );
         }
         self.unallocated_runes.clear();
     }
@@ -100,6 +117,7 @@ impl TransactionCache {
             self.block_height,
             self.tx_index,
             &self.tx_id,
+            self.timestamp,
         );
         db_cache.runes.push(db_rune.clone());
         self.etching = Some(db_rune.clone());
@@ -125,6 +143,7 @@ impl TransactionCache {
             self.block_height,
             self.tx_index,
             &self.tx_id,
+            self.timestamp,
         );
         db_cache.runes.push(db_rune.clone());
         self.etching = Some(db_rune.clone());
@@ -144,13 +163,20 @@ impl TransactionCache {
             self.block_height,
             self.tx_index,
             &self.tx_id,
+            self.pointer,
             &"".to_string(),
             DbLedgerOperation::Mint,
+            self.timestamp,
         ));
         // TODO: Update rune minted total and number of mints
     }
 
-    pub fn apply_cenotaph_mint(&mut self, rune_id: &RuneId, db_rune: &DbRune, db_cache: &mut DbCache) {
+    pub fn apply_cenotaph_mint(
+        &mut self,
+        rune_id: &RuneId,
+        db_rune: &DbRune,
+        db_cache: &mut DbCache,
+    ) {
         // TODO: What's the default mint amount if none was provided?
         let mint_amount = db_rune.terms_amount.unwrap_or(PgNumericU128(0));
         self.runes.insert(rune_id.clone(), db_rune.clone());
@@ -160,8 +186,10 @@ impl TransactionCache {
             self.block_height,
             self.tx_index,
             &self.tx_id,
+            self.pointer,
             &"".to_string(),
             DbLedgerOperation::Burn,
+            self.timestamp,
         ));
         // TODO: Update rune minted+burned total and number of mints+burns
     }
@@ -266,16 +294,18 @@ impl TransactionCache {
             self.output_rune_balances.insert(output, map);
         }
         let script = self.eligible_outputs.get(&output).unwrap();
-        db_cache.ledger_entries.push(DbLedgerEntry {
-            rune_number: db_rune.number,
-            block_height: PgNumericU64(self.block_height),
-            tx_index: PgBigIntU32(self.tx_index),
-            tx_id: self.tx_id.clone(),
-            address: Address::from_script(script, bitcoin::Network::Bitcoin)
+        db_cache.ledger_entries.push(DbLedgerEntry::from_values(
+            delta,
+            db_rune.number.0,
+            self.block_height,
+            self.tx_index,
+            &self.tx_id,
+            output,
+            &Address::from_script(script, bitcoin::Network::Bitcoin)
                 .unwrap()
                 .to_string(),
-            amount: PgNumericU128(delta),
-            operation: DbLedgerOperation::Receive,
-        });
+            DbLedgerOperation::Receive,
+            self.timestamp,
+        ));
     }
 }

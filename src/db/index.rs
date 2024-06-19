@@ -70,7 +70,7 @@ pub async fn index_block(
         let block_height = block.block_identifier.index;
         let tx_index = tx.metadata.index;
         let tx_id = &tx.transaction_identifier.hash;
-        index_cache.begin_transaction(block_height, tx_index, tx_id, &tx.metadata.inputs);
+        index_cache.begin_transaction(block_height, tx_index, tx_id, block.timestamp, &tx.metadata.inputs);
         if let Some(artifact) = Runestone::decipher(&transaction) {
             match artifact {
                 Artifact::Runestone(runestone) => {
