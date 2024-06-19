@@ -36,34 +36,32 @@ pub async fn index_block(
     block: &mut BitcoinBlockData,
     ctx: &Context,
 ) {
-    info!(
-        ctx.expect_logger(),
-        "Indexing block {}", block.block_identifier.index
-    );
+    let log = ctx.expect_logger();
+    let block_height = block.block_identifier.index;
+    info!(log, "Indexing block {}", block_height);
     let mut db_tx = pg_client
         .transaction()
         .await
         .expect("Unable to begin block processing pg transaction");
     for tx in block.transactions.iter() {
         let transaction = bitcoin_tx_from_chainhook_tx(block, tx);
-        let block_height = block.block_identifier.index;
         let tx_index = tx.metadata.index;
         let tx_id = &tx.transaction_identifier.hash;
         index_cache
-            .begin_transaction(
-                block_height,
-                tx_index,
-                tx_id,
-                block.timestamp,
-                &tx.metadata.inputs,
-                &mut db_tx,
-                ctx,
-            )
+            .begin_transaction(block_height, tx_index, tx_id, block.timestamp)
             .await;
         if let Some(artifact) = Runestone::decipher(&transaction) {
             match artifact {
                 Artifact::Runestone(runestone) => {
-                    index_cache.apply_runestone(&runestone, &tx.metadata.outputs);
+                    index_cache
+                        .apply_runestone(
+                            &runestone,
+                            &tx.metadata.inputs,
+                            &tx.metadata.outputs,
+                            &mut db_tx,
+                            ctx,
+                        )
+                        .await;
                     if let Some(etching) = runestone.etching {
                         index_cache.apply_etching(&etching, &mut db_tx, ctx).await;
                     }
@@ -75,7 +73,9 @@ pub async fn index_block(
                     }
                 }
                 Artifact::Cenotaph(cenotaph) => {
-                    index_cache.apply_cenotaph(&cenotaph);
+                    index_cache
+                        .apply_cenotaph(&cenotaph, &tx.metadata.inputs, &mut db_tx, ctx)
+                        .await;
                     if let Some(etching) = cenotaph.etching {
                         index_cache
                             .apply_cenotaph_etching(&etching, &mut db_tx, ctx)
@@ -89,7 +89,7 @@ pub async fn index_block(
                 }
             }
         }
-        index_cache.end_transaction();
+        index_cache.end_transaction(&mut db_tx, ctx);
     }
     index_cache.db_cache.flush(&mut db_tx, ctx).await;
     db_tx

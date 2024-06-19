@@ -104,8 +104,7 @@ pub async fn insert_ledger_entries(
         .prepare(
             "INSERT INTO ledger
         (rune_id, block_height, tx_index, tx_id, output, address, amount, operation, timestamp)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-        ON CONFLICT (name) DO NOTHING",
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
         )
         .await
         .expect("Unable to prepare statement");
@@ -148,7 +147,8 @@ pub async fn get_max_rune_number(db_tx: &mut Transaction<'_>, _ctx: &Context) ->
     let Some(row) = rows.get(0) else {
         return 0;
     };
-    row.get("max")
+    let max: PgBigIntU32 = row.get("max");
+    max.0
 }
 
 pub async fn get_rune_by_rune_id(

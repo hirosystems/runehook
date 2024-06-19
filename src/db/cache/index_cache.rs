@@ -1,6 +1,7 @@
 use std::{collections::HashMap, num::NonZeroUsize, str::FromStr};
 
 use chainhook_sdk::{
+    dashmap::mapref::entry,
     types::bitcoin::{TxIn, TxOut},
     utils::Context,
 };
@@ -46,41 +47,49 @@ impl IndexCache {
         tx_index: u32,
         tx_id: &String,
         timestamp: u32,
+    ) {
+        self.tx_cache = TransactionCache::new(block_height, tx_index, tx_id, timestamp);
+    }
+
+    /// Finalizes the current transaction index cache.
+    pub fn end_transaction(&mut self, db_tx: &mut Transaction<'_>, ctx: &Context) {
+        let entries = self.tx_cache.allocate_remaining_balances();
+        for entry in entries.iter() {
+            info!(
+                ctx.expect_logger(),
+                "Assign unallocated {} {} at block {}",
+                entry.rune_id.clone(),
+                entry.amount.0,
+                entry.block_height.0
+            );
+        }
+        self.add_ledger_entries_to_db_cache(entries);
+    }
+
+    pub async fn apply_runestone(
+        &mut self,
+        runestone: &Runestone,
+        tx_inputs: &Vec<TxIn>,
+        tx_outputs: &Vec<TxOut>,
+        db_tx: &mut Transaction<'_>,
+        ctx: &Context,
+    ) {
+        // info!(
+        //     log,
+        //     "Runestone in tx {} ({}) at block {}", tx_id, tx_index, block_height
+        // );
+        self.unallocate_input_rune_balance(tx_inputs, db_tx, ctx).await;
+        self.tx_cache.apply_runestone_pointer(runestone, tx_outputs);
+    }
+
+    pub async fn apply_cenotaph(
+        &mut self,
+        cenotaph: &Cenotaph,
         tx_inputs: &Vec<TxIn>,
         db_tx: &mut Transaction<'_>,
         ctx: &Context,
     ) {
-        self.tx_cache = TransactionCache::new(block_height, tx_index, tx_id, timestamp);
-        // Take all transaction inputs and transform them into rune balances to be allocated.
-        let mut balances = HashMap::new();
-        for input in tx_inputs {
-            let key = (
-                input.previous_output.txid.hash[2..].to_string(),
-                input.previous_output.vout,
-            );
-            let input_bal = self.get_cached_tx_input_rune_balance(key, db_tx, ctx).await;
-            for (k, v) in input_bal {
-                if let Some(balance) = balances.get(&k).cloned() {
-                    balances.insert(k, v + balance);
-                } else {
-                    balances.insert(k, v);
-                }
-            }
-        }
-        self.tx_cache.unallocate_input_rune_balance(balances);
-    }
-
-    /// Finalizes the current transaction index cache.
-    pub fn end_transaction(&mut self) {
-        let entries = self.tx_cache.allocate_remaining_balances();
-        self.add_ledger_entries_to_db_cache(entries);
-    }
-
-    pub fn apply_runestone(&mut self, runestone: &Runestone, tx_outputs: &Vec<TxOut>) {
-        self.tx_cache.apply_runestone_pointer(runestone, tx_outputs);
-    }
-
-    pub fn apply_cenotaph(&mut self, cenotaph: &Cenotaph) {
+        self.unallocate_input_rune_balance(tx_inputs, db_tx, ctx).await;
         let entries = self.tx_cache.apply_cenotaph_input_burn(cenotaph);
         self.add_ledger_entries_to_db_cache(entries);
     }
@@ -89,9 +98,15 @@ impl IndexCache {
         &mut self,
         etching: &Etching,
         _db_tx: &mut Transaction<'_>,
-        _ctx: &Context,
+        ctx: &Context,
     ) {
         let (rune_id, db_rune) = self.tx_cache.apply_etching(etching, self.next_rune_number);
+        info!(
+            ctx.expect_logger(),
+            "Etching {} at block {}",
+            db_rune.spaced_name.clone(),
+            db_rune.block_height.0
+        );
         self.db_cache.runes.push(db_rune.clone());
         self.runes.put(rune_id, db_rune);
         self.next_rune_number += 1;
@@ -101,11 +116,17 @@ impl IndexCache {
         &mut self,
         rune: &Rune,
         _db_tx: &mut Transaction<'_>,
-        _ctx: &Context,
+        ctx: &Context,
     ) {
         let (rune_id, db_rune) = self
             .tx_cache
             .apply_cenotaph_etching(rune, self.next_rune_number);
+        info!(
+            ctx.expect_logger(),
+            "Etching cenotaph {} at block {}",
+            db_rune.spaced_name.clone(),
+            db_rune.block_height.0
+        );
         self.db_cache.runes.push(db_rune.clone());
         self.runes.put(rune_id, db_rune);
         self.next_rune_number += 1;
@@ -122,6 +143,13 @@ impl IndexCache {
             return;
         };
         let ledger_entry = self.tx_cache.apply_mint(&rune_id, &db_rune);
+        info!(
+            ctx.expect_logger(),
+            "Mint {} {} at block {}",
+            db_rune.spaced_name.clone(),
+            ledger_entry.amount.0,
+            db_rune.block_height.0
+        );
         self.add_ledger_entries_to_db_cache(vec![ledger_entry]);
     }
 
@@ -136,6 +164,13 @@ impl IndexCache {
             return;
         };
         let ledger_entry = self.tx_cache.apply_cenotaph_mint(&rune_id, &db_rune);
+        info!(
+            ctx.expect_logger(),
+            "Mint cenotaph {} {} at block {}",
+            db_rune.spaced_name.clone(),
+            ledger_entry.amount.0,
+            db_rune.block_height.0
+        );
         self.add_ledger_entries_to_db_cache(vec![ledger_entry]);
     }
 
@@ -145,6 +180,15 @@ impl IndexCache {
             return;
         };
         let entries = self.tx_cache.apply_edict(edict, &db_rune);
+        for entry in entries.iter() {
+            info!(
+                ctx.expect_logger(),
+                "Edict {} {} at block {}",
+                db_rune.spaced_name.clone(),
+                entry.amount.0,
+                db_rune.block_height.0
+            );
+        }
         self.add_ledger_entries_to_db_cache(entries);
     }
 
@@ -188,6 +232,31 @@ impl IndexCache {
             }
             HashMap::new()
         }
+    }
+
+    async fn unallocate_input_rune_balance(
+        &mut self,
+        tx_inputs: &Vec<TxIn>,
+        db_tx: &mut Transaction<'_>,
+        ctx: &Context,
+    ) {
+        // Take all transaction inputs and transform them into rune balances to be allocated.
+        let mut balances = HashMap::new();
+        for input in tx_inputs {
+            let key = (
+                input.previous_output.txid.hash[2..].to_string(),
+                input.previous_output.vout,
+            );
+            let input_bal = self.get_cached_tx_input_rune_balance(key, db_tx, ctx).await;
+            for (k, v) in input_bal {
+                if let Some(balance) = balances.get(&k).cloned() {
+                    balances.insert(k, v + balance);
+                } else {
+                    balances.insert(k, v);
+                }
+            }
+        }
+        self.tx_cache.unallocate_input_rune_balance(balances);
     }
 
     fn add_ledger_entries_to_db_cache(&mut self, entries: Vec<DbLedgerEntry>) {

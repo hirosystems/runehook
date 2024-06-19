@@ -20,16 +20,16 @@ CREATE TABLE IF NOT EXISTS runes (
     total_mints             BIGINT NOT NULL DEFAULT 0,
     burned                  NUMERIC NOT NULL DEFAULT 0,
     total_burns             BIGINT NOT NULL DEFAULT 0,
-    timestamp               BIGINT NOT NULL,
+    timestamp               BIGINT NOT NULL
 );
 CREATE INDEX runes_block_height_tx_index_index ON runes (block_height, tx_index);
 
 -- Insert default 'UNCOMMON•GOODS'
 INSERT INTO runes (
-    number, name, block_height, tx_index, tx_id, symbol, terms_amount, terms_cap,
-    terms_height_start, terms_height_end
+    id, number, name, spaced_name, block_height, tx_index, tx_id, symbol, terms_amount, terms_cap,
+    terms_height_start, terms_height_end, timestamp
 )
 VALUES (
-    0, 'UNCOMMON•GOODS', 1, 0, '', '⧉', 1, '340282366920938463463374607431768211455', 840000,
-    1050000
+    '1:0', 0, 'UNCOMMONGOODS', 'UNCOMMON•GOODS', 1, 0, '', '⧉', 1, '340282366920938463463374607431768211455', 840000,
+    1050000, 0
 );

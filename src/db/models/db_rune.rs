@@ -13,7 +13,6 @@ pub struct DbRune {
     pub block_height: PgNumericU64,
     pub tx_index: PgBigIntU32,
     pub tx_id: String,
-    pub timestamp: PgBigIntU32,
     pub divisibility: PgSmallIntU8,
     pub premine: PgNumericU128,
     pub symbol: String,
@@ -25,7 +24,10 @@ pub struct DbRune {
     pub terms_offset_end: Option<PgNumericU64>,
     pub turbo: bool,
     pub minted: PgNumericU128,
+    pub total_mints: PgBigIntU32,
     pub burned: PgNumericU128,
+    pub total_burns: PgBigIntU32,
+    pub timestamp: PgBigIntU32,
 }
 
 impl DbRune {
@@ -37,7 +39,9 @@ impl DbRune {
         tx_id: &String,
         timestamp: u32,
     ) -> Self {
-        let rune = etching.rune.unwrap_or(Rune::reserved(block_height, tx_index));
+        let rune = etching
+            .rune
+            .unwrap_or(Rune::reserved(block_height, tx_index));
         let spaced_name = if let Some(spacers) = etching.spacers {
             let spaced_rune = SpacedRune::new(rune, etching.spacers.unwrap_or(0));
             spaced_rune.to_string()
@@ -87,7 +91,9 @@ impl DbRune {
             terms_offset_end,
             turbo: etching.turbo,
             minted: PgNumericU128(0),
+            total_mints: PgBigIntU32(0),
             burned: PgNumericU128(0),
+            total_burns: PgBigIntU32(0),
             timestamp: PgBigIntU32(timestamp),
         }
     }
@@ -119,7 +125,9 @@ impl DbRune {
             terms_offset_end: None,
             turbo: false,
             minted: PgNumericU128(0),
+            total_mints: PgBigIntU32(0),
             burned: PgNumericU128(0),
+            total_burns: PgBigIntU32(0),
             timestamp: PgBigIntU32(timestamp),
         }
     }
@@ -127,9 +135,9 @@ impl DbRune {
     pub fn from_pg_row(row: &Row) -> Self {
         DbRune {
             id: row.get("id"),
+            number: row.get("number"),
             name: row.get("name"),
             spaced_name: row.get("spaced_name"),
-            number: row.get("number"),
             block_height: row.get("block_height"),
             tx_index: row.get("tx_index"),
             tx_id: row.get("tx_id"),
@@ -144,7 +152,9 @@ impl DbRune {
             terms_offset_end: row.get("terms_offset_end"),
             turbo: row.get("turbo"),
             minted: row.get("minted"),
+            total_mints: row.get("total_mints"),
             burned: row.get("burned"),
+            total_burns: row.get("total_burns"),
             timestamp: row.get("timestamp"),
         }
     }

@@ -63,7 +63,7 @@ impl TransactionCache {
         // Keep a record of non-OP_RETURN outputs.
         let mut first_eligible_output: Option<u32> = None;
         for (i, output) in tx_outputs.iter().enumerate() {
-            let bytes = hex::decode(&output.script_pubkey).unwrap();
+            let bytes = hex::decode(&output.script_pubkey[2..]).unwrap();
             let script = ScriptBuf::from_bytes(bytes);
             if !script.is_op_return() {
                 if first_eligible_output.is_none() {
@@ -283,7 +283,21 @@ impl TransactionCache {
             map.insert(rune_id.clone(), delta);
             self.output_rune_balances.insert(output, map);
         }
-        let script = self.eligible_outputs.get(&output).unwrap();
+        let Some(script) = self.eligible_outputs.get(&output) else {
+            // TODO: log
+            // Burn runes because pointer is invalid.
+            return DbLedgerEntry::from_values(
+                delta,
+                rune_id.clone(),
+                self.block_height,
+                self.tx_index,
+                &self.tx_id,
+                output,
+                &"".to_string(),
+                DbLedgerOperation::Burn,
+                self.timestamp,
+            );
+        };
         DbLedgerEntry::from_values(
             delta,
             rune_id.clone(),

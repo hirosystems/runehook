@@ -9,7 +9,6 @@ use tokio_postgres::types::{to_sql_checked, FromSql, IsNull, ToSql, Type};
 
 use super::models::db_ledger_operation::DbLedgerOperation;
 
-
 fn write_big_uint_to_pg_numeric_bytes(num: BigInt, out: &mut BytesMut) {
     let mut digits = vec![];
 
@@ -39,6 +38,7 @@ fn read_two_bytes(cursor: &mut Cursor<&[u8]>) -> std::io::Result<[u8; 2]> {
     Ok(result)
 }
 
+// TODO: write tests for this
 fn big_uint_from_pg_numeric_bytes(raw: &[u8]) -> BigInt {
     let mut raw = Cursor::new(raw);
     let num_groups = u16::from_be_bytes(read_two_bytes(&mut raw).unwrap());
@@ -56,11 +56,17 @@ fn big_uint_from_pg_numeric_bytes(raw: &[u8]) -> BigInt {
 
     let mut result = BigInt::ZERO;
     if integers_part_count > 0 {
-        let integers: Vec<_> = digits.drain(..integers_part_count as usize).collect();
+        let (start_integers, last) = if integers_part_count > digits.len() as i32 {
+            (integers_part_count - digits.len() as i32, digits.len() as i32)
+        } else {
+            (0, integers_part_count)
+        };
+        let integers: Vec<_> = digits.drain(..last as usize).collect();
         for digit in integers {
             result = result.checked_mul(&BigInt::from(10000)).unwrap();
             result = result.checked_add(&BigInt::from(digit)).unwrap();
         }
+        result = result.checked_mul(&BigInt::from(10000).pow(4 * start_integers as u32)).unwrap();
     }
     result
 }
@@ -206,7 +212,7 @@ impl ToSql for DbLedgerOperation {
     }
 
     fn accepts(ty: &Type) -> bool {
-        ty.name() == "text"
+        ty.name() == "ledger_operation"
     }
 
     to_sql_checked!();
@@ -223,6 +229,6 @@ impl<'a> FromSql<'a> for DbLedgerOperation {
     }
 
     fn accepts(ty: &Type) -> bool {
-        ty.name() == "text"
+        ty.name() == "ledger_operation"
     }
 }
