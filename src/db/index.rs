@@ -1,14 +1,7 @@
-use std::str::FromStr;
-
 use bitcoin::absolute::LockTime;
 use bitcoin::transaction::TxOut;
-use bitcoin::OutPoint;
 use bitcoin::ScriptBuf;
-use bitcoin::Sequence;
 use bitcoin::Transaction;
-use bitcoin::TxIn;
-use bitcoin::Txid;
-use bitcoin::Witness;
 use chainhook_sdk::types::BitcoinTransactionData;
 use chainhook_sdk::{types::BitcoinBlockData, utils::Context};
 use ordinals::Artifact;
@@ -24,21 +17,7 @@ fn bitcoin_tx_from_chainhook_tx(
     Transaction {
         version: 2,
         lock_time: LockTime::from_time(block.timestamp).unwrap(),
-        input: vec![],
-        // input: tx
-        //     .metadata
-        //     .inputs
-        //     .iter()
-        //     .map(|input| TxIn {
-        //         previous_output: OutPoint {
-        //             txid: Txid::from_str(input.previous_output.txid.hash.as_str()).unwrap(),
-        //             vout: input.previous_output.vout,
-        //         },
-        //         script_sig: ScriptBuf::from_bytes(hex::decode(&input.script_sig[2..]).unwrap()),
-        //         sequence: Sequence(input.sequence),
-        //         witness: Witness::new(), // We don't need this for runes
-        //     })
-        //     .collect(),
+        input: vec![], // Don't need inputs at this point.
         output: tx
             .metadata
             .outputs
@@ -70,13 +49,21 @@ pub async fn index_block(
         let block_height = block.block_identifier.index;
         let tx_index = tx.metadata.index;
         let tx_id = &tx.transaction_identifier.hash;
-        index_cache.begin_transaction(block_height, tx_index, tx_id, block.timestamp, &tx.metadata.inputs);
+        index_cache
+            .begin_transaction(
+                block_height,
+                tx_index,
+                tx_id,
+                block.timestamp,
+                &tx.metadata.inputs,
+                &mut db_tx,
+                ctx,
+            )
+            .await;
         if let Some(artifact) = Runestone::decipher(&transaction) {
             match artifact {
                 Artifact::Runestone(runestone) => {
-                    index_cache
-                        .tx_cache
-                        .apply_runestone_pointer(&runestone, &tx.metadata.outputs);
+                    index_cache.apply_runestone(&runestone, &tx.metadata.outputs);
                     if let Some(etching) = runestone.etching {
                         index_cache.apply_etching(&etching, &mut db_tx, ctx).await;
                     }
@@ -88,7 +75,7 @@ pub async fn index_block(
                     }
                 }
                 Artifact::Cenotaph(cenotaph) => {
-                    index_cache.tx_cache.apply_cenotaph_input_burn(&cenotaph);
+                    index_cache.apply_cenotaph(&cenotaph);
                     if let Some(etching) = cenotaph.etching {
                         index_cache
                             .apply_cenotaph_etching(&etching, &mut db_tx, ctx)

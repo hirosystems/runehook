@@ -1,45 +1,12 @@
-use ordinals::{Edict, Etching, Rune, RuneId, SpacedRune};
+use ordinals::{Etching, Rune, RuneId, SpacedRune};
 use tokio_postgres::Row;
 
-use super::types::{PgBigIntU32, PgNumericU128, PgNumericU64, PgSmallIntU8};
-
-/// A value from the `ledger_operation` enum type.
-#[derive(Debug)]
-pub enum DbLedgerOperation {
-    Mint,
-    Burn,
-    Send,
-    Receive,
-}
-
-impl DbLedgerOperation {
-    pub fn as_str(&self) -> &str {
-        match self {
-            Self::Mint => "mint",
-            Self::Burn => "burn",
-            Self::Send => "send",
-            Self::Receive => "receive",
-        }
-    }
-}
-
-impl std::str::FromStr for DbLedgerOperation {
-    type Err = ();
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "mint" => Ok(DbLedgerOperation::Mint),
-            "burn" => Ok(DbLedgerOperation::Burn),
-            "send" => Ok(DbLedgerOperation::Send),
-            "receive" => Ok(DbLedgerOperation::Receive),
-            _ => Err(()),
-        }
-    }
-}
+use crate::db::types::{PgBigIntU32, PgNumericU128, PgNumericU64, PgSmallIntU8};
 
 /// A row in the `runes` table.
 #[derive(Debug, Clone)]
 pub struct DbRune {
+    pub id: String,
     pub number: PgBigIntU32,
     pub name: String,
     pub spaced_name: String,
@@ -93,6 +60,7 @@ impl DbRune {
             terms_offset_end = terms.offset.1.map(|i| PgNumericU64(i));
         }
         DbRune {
+            id: format!("{}:{}", block_height, tx_index),
             number: PgBigIntU32(number),
             name,
             spaced_name,
@@ -133,6 +101,7 @@ impl DbRune {
         timestamp: u32,
     ) -> Self {
         DbRune {
+            id: format!("{}:{}", block_height, tx_index),
             name: rune.to_string(),
             spaced_name: rune.to_string(),
             number: PgBigIntU32(number),
@@ -157,6 +126,7 @@ impl DbRune {
 
     pub fn from_pg_row(row: &Row) -> Self {
         DbRune {
+            id: row.get("id"),
             name: row.get("name"),
             spaced_name: row.get("spaced_name"),
             number: row.get("number"),
@@ -183,46 +153,6 @@ impl DbRune {
         RuneId {
             block: self.block_height.0,
             tx: self.tx_index.0,
-        }
-    }
-}
-
-/// A row in the `ledger` table.
-#[derive(Debug)]
-pub struct DbLedgerEntry {
-    pub rune_number: PgBigIntU32,
-    pub block_height: PgNumericU64,
-    pub tx_index: PgBigIntU32,
-    pub tx_id: String,
-    pub output: PgBigIntU32,
-    pub address: String,
-    pub amount: PgNumericU128,
-    pub operation: DbLedgerOperation,
-    pub timestamp: PgBigIntU32,
-}
-
-impl DbLedgerEntry {
-    pub fn from_values(
-        amount: u128,
-        rune_number: u32,
-        block_height: u64,
-        tx_index: u32,
-        tx_id: &String,
-        output: u32,
-        address: &String,
-        operation: DbLedgerOperation,
-        timestamp: u32,
-    ) -> Self {
-        DbLedgerEntry {
-            rune_number: PgBigIntU32(rune_number),
-            block_height: PgNumericU64(block_height),
-            tx_index: PgBigIntU32(tx_index),
-            tx_id: tx_id[2..].to_string(),
-            output: PgBigIntU32(output),
-            address: address.clone(),
-            amount: PgNumericU128(amount),
-            operation,
-            timestamp: PgBigIntU32(timestamp),
         }
     }
 }

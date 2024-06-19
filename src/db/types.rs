@@ -7,7 +7,8 @@ use std::{
 };
 use tokio_postgres::types::{to_sql_checked, FromSql, IsNull, ToSql, Type};
 
-use super::models::DbLedgerOperation;
+use super::models::db_ledger_operation::DbLedgerOperation;
+
 
 fn write_big_uint_to_pg_numeric_bytes(num: BigInt, out: &mut BytesMut) {
     let mut digits = vec![];

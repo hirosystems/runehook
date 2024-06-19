@@ -1,7 +1,10 @@
 use chainhook_sdk::utils::Context;
 use tokio_postgres::Transaction;
 
-use crate::db::{insert_ledger_entries, insert_rune_rows, models::{DbLedgerEntry, DbRune}};
+use crate::db::{
+    insert_ledger_entries, insert_rune_rows,
+    models::{db_ledger_entry::DbLedgerEntry, db_rune::DbRune},
+};
 
 /// Holds rows that have yet to be inserted into the database.
 pub struct DbCache {

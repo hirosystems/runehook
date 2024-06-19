@@ -1,14 +1,16 @@
+use std::{collections::HashMap, str::FromStr};
+
 use chainhook_sdk::utils::Context;
-use models::{DbLedgerEntry, DbRune};
+use models::{db_ledger_entry::DbLedgerEntry, db_rune::DbRune};
 use ordinals::RuneId;
 use refinery::embed_migrations;
 use tokio_postgres::{Client, Error, NoTls, Transaction};
-use types::{PgBigIntU32, PgNumericU64};
+use types::{PgBigIntU32, PgNumericU128, PgNumericU64};
 
-pub mod index;
-pub mod models;
-pub mod types;
 pub mod cache;
+pub mod index;
+pub mod types;
+pub mod models;
 
 embed_migrations!("migrations");
 
@@ -48,9 +50,9 @@ pub async fn insert_rune_rows(
 ) -> Result<bool, Error> {
     let stmt = db_tx.prepare(
         "INSERT INTO runes
-        (number, name, block_height, tx_index, tx_id, divisibility, premine, symbol, terms_amount, terms_cap, terms_height_start,
-         terms_height_end, terms_offset_start, terms_offset_end, turbo)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+        (id, number, name, spaced_name, block_height, tx_index, tx_id, divisibility, premine, symbol, terms_amount, terms_cap,
+         terms_height_start, terms_height_end, terms_offset_start, terms_offset_end, turbo, timestamp)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
         ON CONFLICT (name) DO NOTHING"
     ).await.expect("Unable to prepare statement");
     for row in rows.iter() {
@@ -58,8 +60,10 @@ pub async fn insert_rune_rows(
             .execute(
                 &stmt,
                 &[
+                    &row.id,
                     &row.number,
                     &row.name,
+                    &row.spaced_name,
                     &row.block_height,
                     &row.tx_index,
                     &row.tx_id,
@@ -73,6 +77,7 @@ pub async fn insert_rune_rows(
                     &row.terms_offset_start,
                     &row.terms_offset_end,
                     &row.turbo,
+                    &row.timestamp,
                 ],
             )
             .await
@@ -95,24 +100,29 @@ pub async fn insert_ledger_entries(
     db_tx: &mut Transaction<'_>,
     ctx: &Context,
 ) -> Result<bool, Error> {
-    let stmt = db_tx.prepare(
-        "INSERT INTO ledger
-        (rune_number, block_height, tx_index, tx_id, address, amount, operation)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
-        ON CONFLICT (name) DO NOTHING"
-    ).await.expect("Unable to prepare statement");
+    let stmt = db_tx
+        .prepare(
+            "INSERT INTO ledger
+        (rune_id, block_height, tx_index, tx_id, output, address, amount, operation, timestamp)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        ON CONFLICT (name) DO NOTHING",
+        )
+        .await
+        .expect("Unable to prepare statement");
     for row in rows.iter() {
         match db_tx
             .execute(
                 &stmt,
                 &[
-                    &row.rune_number,
+                    &row.rune_id,
                     &row.block_height,
                     &row.tx_index,
                     &row.tx_id,
+                    &row.output,
                     &row.address,
                     &row.amount,
                     &row.operation,
+                    &row.timestamp,
                 ],
             )
             .await
@@ -167,4 +177,44 @@ pub async fn get_rune_by_rune_id(
         return None;
     };
     Some(DbRune::from_pg_row(row))
+}
+
+/// Returns a `HashMap` of an transaction output's rune balance.
+pub async fn get_output_rune_balance(
+    tx_id: String,
+    output: u32,
+    db_tx: &mut Transaction<'_>,
+    ctx: &Context,
+) -> Option<HashMap<RuneId, u128>> {
+    let rows = match db_tx
+        .query(
+            "SELECT rune_id, amount FROM ledger WHERE tx_id = $1 AND output = $2",
+            &[&tx_id, &PgBigIntU32(output)],
+        )
+        .await
+    {
+        Ok(rows) => rows,
+        Err(e) => {
+            error!(
+                ctx.expect_logger(),
+                "error retrieving output rune balance: {}",
+                e.to_string()
+            );
+            panic!();
+        }
+    };
+    if rows.len() == 0 {
+        return None;
+    };
+    let mut map = HashMap::new();
+    for row in rows {
+        let rune_id = RuneId::from_str(row.get("rune_id")).expect("unable to parse rune id");
+        let balance: PgNumericU128 = row.get("amount");
+        if let Some(entry) = map.get(&rune_id) {
+            map.insert(rune_id, *entry + balance.0);
+        } else {
+            map.insert(rune_id, balance.0);
+        }
+    }
+    Some(map)
 }

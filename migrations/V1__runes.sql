@@ -1,11 +1,11 @@
 CREATE TABLE IF NOT EXISTS runes (
-    number                  BIGINT NOT NULL PRIMARY KEY,
+    id                      TEXT NOT NULL PRIMARY KEY,
+    number                  BIGINT NOT NULL UNIQUE,
     name                    TEXT NOT NULL UNIQUE,
     spaced_name             TEXT NOT NULL,
     block_height            NUMERIC NOT NULL,
     tx_index                BIGINT NOT NULL,
     tx_id                   TEXT NOT NULL,
-    timestamp               BIGINT NOT NULL,
     divisibility            SMALLINT NOT NULL DEFAULT 0,
     premine                 NUMERIC NOT NULL DEFAULT 0,
     symbol                  TEXT NOT NULL DEFAULT '¤',
@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS runes (
     total_mints             BIGINT NOT NULL DEFAULT 0,
     burned                  NUMERIC NOT NULL DEFAULT 0,
     total_burns             BIGINT NOT NULL DEFAULT 0,
+    timestamp               BIGINT NOT NULL,
 );
 CREATE INDEX runes_block_height_tx_index_index ON runes (block_height, tx_index);
 

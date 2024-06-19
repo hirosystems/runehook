@@ -1,11 +1,13 @@
 use std::collections::HashMap;
 
 use bitcoin::{Address, ScriptBuf};
-use chainhook_sdk::types::bitcoin::{TxIn, TxOut};
+use chainhook_sdk::types::bitcoin::TxOut;
 use ordinals::{Cenotaph, Edict, Etching, Rune, RuneId, Runestone};
 
 use crate::db::{
-    models::{DbLedgerEntry, DbLedgerOperation, DbRune},
+    models::{
+        db_ledger_entry::DbLedgerEntry, db_ledger_operation::DbLedgerOperation, db_rune::DbRune,
+    },
     types::PgNumericU128,
 };
 
@@ -48,13 +50,14 @@ impl TransactionCache {
         }
     }
 
-    /// Takes the input runes and moves them to the unallocated balance for edicts.
-    pub fn unallocate_input_rune_balance(&mut self, tx_inputs: &Vec<TxIn>) {
-        for input in tx_inputs.iter() {
-            //
+    /// Takes this transaction's input runes and moves them to the unallocated balance for future edict allocation.
+    pub fn unallocate_input_rune_balance(&mut self, input_runes: HashMap<RuneId, u128>) {
+        for (rune_id, amount) in input_runes.iter() {
+            self.change_unallocated_rune_balance(rune_id, *amount);
         }
     }
 
+    /// Takes the runestone's output pointer and keeps a record of eligible outputs to send runes to.
     pub fn apply_runestone_pointer(&mut self, runestone: &Runestone, tx_outputs: &Vec<TxOut>) {
         self.total_outputs = tx_outputs.len() as u32;
         // Keep a record of non-OP_RETURN outputs.
@@ -76,8 +79,25 @@ impl TransactionCache {
         }
     }
 
-    pub fn apply_cenotaph_input_burn(&mut self, cenotaph: &Cenotaph) {
-        todo!()
+    /// Burns the rune balances input to this transaction.
+    pub fn apply_cenotaph_input_burn(&mut self, _cenotaph: &Cenotaph) -> Vec<DbLedgerEntry> {
+        let mut results = vec![];
+        for (rune_id, unallocated) in self.unallocated_runes.clone().iter() {
+            results.push(DbLedgerEntry::from_values(
+                *unallocated,
+                rune_id.clone(),
+                self.block_height,
+                self.tx_index,
+                &self.tx_id,
+                // TODO: Should this be NULL if we're burning?
+                self.pointer,
+                &"".to_string(),
+                DbLedgerOperation::Burn,
+                self.timestamp,
+            ));
+        }
+        self.unallocated_runes.clear();
+        results
     }
 
     /// Moves remaining unallocated runes to the correct output depending on runestone configuration. Must be called once
@@ -85,16 +105,7 @@ impl TransactionCache {
     pub fn allocate_remaining_balances(&mut self) -> Vec<DbLedgerEntry> {
         let mut results = vec![];
         for (rune_id, unallocated) in self.unallocated_runes.clone().iter() {
-            let Some(db_rune) = self.runes.get(rune_id).cloned() else {
-                // log
-                continue;
-            };
-            results.push(self.change_output_rune_balance(
-                self.pointer,
-                rune_id,
-                &db_rune,
-                *unallocated,
-            ));
+            results.push(self.change_output_rune_balance(self.pointer, rune_id, *unallocated));
         }
         self.unallocated_runes.clear();
         results
@@ -146,7 +157,7 @@ impl TransactionCache {
         self.runes.insert(rune_id.clone(), db_rune.clone());
         DbLedgerEntry::from_values(
             mint_amount.0,
-            db_rune.number.0,
+            rune_id.clone(),
             self.block_height,
             self.tx_index,
             &self.tx_id,
@@ -164,10 +175,11 @@ impl TransactionCache {
         self.runes.insert(rune_id.clone(), db_rune.clone());
         DbLedgerEntry::from_values(
             mint_amount.0,
-            db_rune.number.0,
+            rune_id.clone(),
             self.block_height,
             self.tx_index,
             &self.tx_id,
+            // TODO: Should this be NULL if we're burning?
             self.pointer,
             &"".to_string(),
             DbLedgerOperation::Burn,
@@ -214,7 +226,6 @@ impl TransactionCache {
                         results.push(self.change_output_rune_balance(
                             output,
                             &rune_id,
-                            db_rune,
                             per_output + extra,
                         ));
                     }
@@ -223,9 +234,7 @@ impl TransactionCache {
                     // Give `amount` to all outputs or until unallocated runs out.
                     for output in output_keys {
                         let amount = edict.amount.min(unallocated);
-                        results.push(
-                            self.change_output_rune_balance(output, &rune_id, db_rune, amount),
-                        );
+                        results.push(self.change_output_rune_balance(output, &rune_id, amount));
                         unallocated -= amount;
                     }
                 }
@@ -237,12 +246,7 @@ impl TransactionCache {
                     amount = unallocated;
                     unallocated = 0;
                 }
-                results.push(self.change_output_rune_balance(
-                    edict.output,
-                    &rune_id,
-                    db_rune,
-                    amount,
-                ));
+                results.push(self.change_output_rune_balance(edict.output, &rune_id, amount));
             }
             _ => {
                 // TODO: what now?
@@ -266,7 +270,6 @@ impl TransactionCache {
         &mut self,
         output: u32,
         rune_id: &RuneId,
-        db_rune: &DbRune,
         delta: u128,
     ) -> DbLedgerEntry {
         if let Some(pointer_bal) = self.output_rune_balances.get_mut(&output) {
@@ -283,7 +286,7 @@ impl TransactionCache {
         let script = self.eligible_outputs.get(&output).unwrap();
         DbLedgerEntry::from_values(
             delta,
-            db_rune.number.0,
+            rune_id.clone(),
             self.block_height,
             self.tx_index,
             &self.tx_id,
