@@ -57,7 +57,10 @@ fn big_uint_from_pg_numeric_bytes(raw: &[u8]) -> BigInt {
     let mut result = BigInt::ZERO;
     if integers_part_count > 0 {
         let (start_integers, last) = if integers_part_count > digits.len() as i32 {
-            (integers_part_count - digits.len() as i32, digits.len() as i32)
+            (
+                integers_part_count - digits.len() as i32,
+                digits.len() as i32,
+            )
         } else {
             (0, integers_part_count)
         };
@@ -66,7 +69,9 @@ fn big_uint_from_pg_numeric_bytes(raw: &[u8]) -> BigInt {
             result = result.checked_mul(&BigInt::from(10000)).unwrap();
             result = result.checked_add(&BigInt::from(digit)).unwrap();
         }
-        result = result.checked_mul(&BigInt::from(10000).pow(4 * start_integers as u32)).unwrap();
+        result = result
+            .checked_mul(&BigInt::from(10000).pow(4 * start_integers as u32))
+            .unwrap();
     }
     result
 }

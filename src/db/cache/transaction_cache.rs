@@ -13,9 +13,9 @@ use crate::db::{
 
 /// Holds cached data relevant to a single transaction during indexing.
 pub struct TransactionCache {
-    block_height: u64,
-    tx_index: u32,
-    tx_id: String,
+    pub block_height: u64,
+    pub tx_index: u32,
+    pub tx_id: String,
     timestamp: u32,
     /// Rune etched during this transaction
     pub etching: Option<DbRune>,

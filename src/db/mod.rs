@@ -4,13 +4,13 @@ use chainhook_sdk::utils::Context;
 use models::{db_ledger_entry::DbLedgerEntry, db_rune::DbRune};
 use ordinals::RuneId;
 use refinery::embed_migrations;
-use tokio_postgres::{Client, Error, NoTls, Transaction};
+use tokio_postgres::{types::ToSql, Client, Error, NoTls, Transaction};
 use types::{PgBigIntU32, PgNumericU128, PgNumericU64};
 
 pub mod cache;
 pub mod index;
-pub mod types;
 pub mod models;
+pub mod types;
 
 embed_migrations!("migrations");
 
@@ -179,17 +179,35 @@ pub async fn get_rune_by_rune_id(
     Some(DbRune::from_pg_row(row))
 }
 
-/// Returns a `HashMap` of an transaction output's rune balance.
-pub async fn get_output_rune_balance(
-    tx_id: String,
-    output: u32,
+/// Returns a `HashMap` of rune balances for a list of outputs.
+pub async fn get_output_rune_balances(
+    outputs: Vec<(String, u32)>,
     db_tx: &mut Transaction<'_>,
     ctx: &Context,
 ) -> Option<HashMap<RuneId, u128>> {
+    // Instead of preparing a statement and running it thousands of times.
+    let mut arg_num = 1;
+    let mut args = String::new();
+    let mut data = vec![];
+    for (tx_id, output) in outputs.iter() {
+        args.push_str(format!("(${},${}),", arg_num, arg_num + 1).as_str());
+        arg_num += 2;
+        data.push((tx_id, PgBigIntU32(*output)));
+    }
+    args.pop();
+    let mut params: Vec<&(dyn ToSql + Sync)> = vec![];
+    for d in data.iter() {
+        params.push(d.0);
+        params.push(&d.1);
+    }
     let rows = match db_tx
         .query(
-            "SELECT rune_id, amount FROM ledger WHERE tx_id = $1 AND output = $2",
-            &[&tx_id, &PgBigIntU32(output)],
+            format!(
+                "SELECT rune_id, amount FROM ledger WHERE (tx_id, output) IN ({})",
+                args
+            )
+            .as_str(),
+            &params,
         )
         .await
     {
@@ -197,7 +215,7 @@ pub async fn get_output_rune_balance(
         Err(e) => {
             error!(
                 ctx.expect_logger(),
-                "error retrieving output rune balance: {}",
+                "error retrieving output rune balances: {}",
                 e.to_string()
             );
             panic!();

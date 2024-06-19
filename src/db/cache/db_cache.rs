@@ -22,10 +22,22 @@ impl DbCache {
 
     pub async fn flush(&mut self, db_tx: &mut Transaction<'_>, ctx: &Context) {
         if self.runes.len() > 0 {
+            debug!(
+                ctx.expect_logger(),
+                "Flushing {} rune rows",
+                self.runes.len()
+            );
             let _ = insert_rune_rows(&self.runes, db_tx, ctx).await;
+            self.runes.clear();
         }
         if self.ledger_entries.len() > 0 {
+            debug!(
+                ctx.expect_logger(),
+                "Flushing {} ledger rows",
+                self.ledger_entries.len()
+            );
             let _ = insert_ledger_entries(&self.ledger_entries, db_tx, ctx).await;
+            self.ledger_entries.clear();
         }
     }
 }

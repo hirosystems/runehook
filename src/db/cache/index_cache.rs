@@ -1,7 +1,6 @@
 use std::{collections::HashMap, num::NonZeroUsize, str::FromStr};
 
 use chainhook_sdk::{
-    dashmap::mapref::entry,
     types::bitcoin::{TxIn, TxOut},
     utils::Context,
 };
@@ -10,7 +9,7 @@ use ordinals::{Cenotaph, Edict, Etching, Rune, RuneId, Runestone};
 use tokio_postgres::Transaction;
 
 use crate::db::{
-    get_output_rune_balance, get_rune_by_rune_id,
+    get_output_rune_balances, get_rune_by_rune_id,
     models::{db_ledger_entry::DbLedgerEntry, db_rune::DbRune},
 };
 
@@ -74,11 +73,14 @@ impl IndexCache {
         db_tx: &mut Transaction<'_>,
         ctx: &Context,
     ) {
-        // info!(
-        //     log,
-        //     "Runestone in tx {} ({}) at block {}", tx_id, tx_index, block_height
-        // );
-        self.unallocate_input_rune_balance(tx_inputs, db_tx, ctx).await;
+        info!(
+            ctx.expect_logger(),
+            "Runestone in tx {} ({}) at block {}",
+            self.tx_cache.tx_id,
+            self.tx_cache.tx_index,
+            self.tx_cache.block_height
+        );
+        self.scan_tx_input_rune_balance(tx_inputs, db_tx, ctx).await;
         self.tx_cache.apply_runestone_pointer(runestone, tx_outputs);
     }
 
@@ -89,7 +91,14 @@ impl IndexCache {
         db_tx: &mut Transaction<'_>,
         ctx: &Context,
     ) {
-        self.unallocate_input_rune_balance(tx_inputs, db_tx, ctx).await;
+        info!(
+            ctx.expect_logger(),
+            "Cenotaph in tx {} ({}) at block {}",
+            self.tx_cache.tx_id,
+            self.tx_cache.tx_index,
+            self.tx_cache.block_height
+        );
+        self.scan_tx_input_rune_balance(tx_inputs, db_tx, ctx).await;
         let entries = self.tx_cache.apply_cenotaph_input_burn(cenotaph);
         self.add_ledger_entries_to_db_cache(entries);
     }
@@ -214,27 +223,7 @@ impl IndexCache {
         return Some(db_rune);
     }
 
-    async fn get_cached_tx_input_rune_balance(
-        &mut self,
-        input: (String, u32),
-        db_tx: &mut Transaction<'_>,
-        ctx: &Context,
-    ) -> HashMap<RuneId, u128> {
-        if let Some(output_balance) = self.output_balances.get(&input) {
-            output_balance.clone()
-        } else {
-            // Cache miss, look in the database.
-            self.db_cache.flush(db_tx, ctx).await;
-            if let Some(output_balances) =
-                get_output_rune_balance(input.0, input.1, db_tx, ctx).await
-            {
-                return output_balances;
-            }
-            HashMap::new()
-        }
-    }
-
-    async fn unallocate_input_rune_balance(
+    async fn scan_tx_input_rune_balance(
         &mut self,
         tx_inputs: &Vec<TxIn>,
         db_tx: &mut Transaction<'_>,
@@ -242,17 +231,36 @@ impl IndexCache {
     ) {
         // Take all transaction inputs and transform them into rune balances to be allocated.
         let mut balances = HashMap::new();
+        let mut cache_misses = vec![];
         for input in tx_inputs {
             let key = (
                 input.previous_output.txid.hash[2..].to_string(),
                 input.previous_output.vout,
             );
-            let input_bal = self.get_cached_tx_input_rune_balance(key, db_tx, ctx).await;
-            for (k, v) in input_bal {
-                if let Some(balance) = balances.get(&k).cloned() {
-                    balances.insert(k, v + balance);
-                } else {
-                    balances.insert(k, v);
+            // Look in the cache.
+            if let Some(output_balance) = self.output_balances.get(&key) {
+                for (k, v) in output_balance.iter() {
+                    if let Some(balance) = balances.get(k) {
+                        balances.insert(k.clone(), *v + *balance);
+                    } else {
+                        balances.insert(k.clone(), *v);
+                    }
+                }
+            } else {
+                cache_misses.push(key);
+            }
+        }
+        if cache_misses.len() > 0 {
+            // Look for misses in the DB
+            self.db_cache.flush(db_tx, ctx).await;
+            if let Some(output_balances) = get_output_rune_balances(cache_misses, db_tx, ctx).await
+            {
+                for (k, v) in output_balances.iter() {
+                    if let Some(balance) = balances.get(k) {
+                        balances.insert(k.clone(), *v + *balance);
+                    } else {
+                        balances.insert(k.clone(), *v);
+                    }
                 }
             }
         }
