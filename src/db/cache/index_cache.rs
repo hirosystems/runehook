@@ -47,8 +47,9 @@ impl IndexCache {
 
     /// Finalizes the current transaction index cache.
     pub fn end_transaction(&mut self) {
-        self.tx_cache
-            .allocate_remaining_balances(&mut self.db_cache);
+        self.db_cache
+            .ledger_entries
+            .extend(self.tx_cache.allocate_remaining_balances());
     }
 
     pub async fn apply_etching(
@@ -57,9 +58,8 @@ impl IndexCache {
         _db_tx: &mut Transaction<'_>,
         _ctx: &Context,
     ) {
-        let (rune_id, db_rune) =
-            self.tx_cache
-                .apply_etching(etching, self.next_rune_number, &mut self.db_cache);
+        let (rune_id, db_rune) = self.tx_cache.apply_etching(etching, self.next_rune_number);
+        self.db_cache.runes.push(db_rune.clone());
         self.runes.put(rune_id, db_rune);
         self.next_rune_number += 1;
     }
@@ -70,9 +70,10 @@ impl IndexCache {
         _db_tx: &mut Transaction<'_>,
         _ctx: &Context,
     ) {
-        let (rune_id, db_rune) =
-            self.tx_cache
-                .apply_cenotaph_etching(rune, self.next_rune_number, &mut self.db_cache);
+        let (rune_id, db_rune) = self
+            .tx_cache
+            .apply_cenotaph_etching(rune, self.next_rune_number);
+        self.db_cache.runes.push(db_rune.clone());
         self.runes.put(rune_id, db_rune);
         self.next_rune_number += 1;
     }
@@ -87,8 +88,8 @@ impl IndexCache {
             // log
             return;
         };
-        self.tx_cache
-            .apply_mint(&rune_id, &db_rune, &mut self.db_cache);
+        let ledger_entry = self.tx_cache.apply_mint(&rune_id, &db_rune);
+        self.db_cache.ledger_entries.push(ledger_entry);
     }
 
     pub async fn apply_cenotaph_mint(
@@ -101,8 +102,8 @@ impl IndexCache {
             // log
             return;
         };
-        self.tx_cache
-            .apply_mint(&rune_id, &db_rune, &mut self.db_cache);
+        let ledger_entry = self.tx_cache.apply_cenotaph_mint(&rune_id, &db_rune);
+        self.db_cache.ledger_entries.push(ledger_entry);
     }
 
     pub async fn apply_edict(&mut self, edict: &Edict, db_tx: &mut Transaction<'_>, ctx: &Context) {
@@ -110,8 +111,9 @@ impl IndexCache {
             // rune should exist?
             return;
         };
-        self.tx_cache
-            .apply_edict(edict, &db_rune, &mut self.db_cache);
+        self.db_cache
+            .ledger_entries
+            .extend(self.tx_cache.apply_edict(edict, &db_rune));
     }
 
     async fn get_rune_by_rune_id(

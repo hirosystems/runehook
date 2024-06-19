@@ -9,8 +9,6 @@ use crate::db::{
     types::PgNumericU128,
 };
 
-use super::db_cache::DbCache;
-
 /// Holds cached data relevant to a single transaction during indexing.
 pub struct TransactionCache {
     block_height: u64,
@@ -84,29 +82,25 @@ impl TransactionCache {
 
     /// Moves remaining unallocated runes to the correct output depending on runestone configuration. Must be called once
     /// processing for a transaction is complete.
-    pub fn allocate_remaining_balances(&mut self, db_cache: &mut DbCache) {
+    pub fn allocate_remaining_balances(&mut self) -> Vec<DbLedgerEntry> {
+        let mut results = vec![];
         for (rune_id, unallocated) in self.unallocated_runes.clone().iter() {
             let Some(db_rune) = self.runes.get(rune_id).cloned() else {
                 // log
                 continue;
             };
-            self.change_output_rune_balance(
+            results.push(self.change_output_rune_balance(
                 self.pointer,
                 rune_id,
                 &db_rune,
                 *unallocated,
-                db_cache,
-            );
+            ));
         }
         self.unallocated_runes.clear();
+        results
     }
 
-    pub fn apply_etching(
-        &mut self,
-        etching: &Etching,
-        number: u32,
-        db_cache: &mut DbCache,
-    ) -> (RuneId, DbRune) {
+    pub fn apply_etching(&mut self, etching: &Etching, number: u32) -> (RuneId, DbRune) {
         let rune_id = RuneId {
             block: self.block_height,
             tx: self.tx_index,
@@ -119,19 +113,13 @@ impl TransactionCache {
             &self.tx_id,
             self.timestamp,
         );
-        db_cache.runes.push(db_rune.clone());
         self.etching = Some(db_rune.clone());
         self.runes.insert(rune_id.clone(), db_rune.clone());
         self.change_unallocated_rune_balance(&rune_id, etching.premine.unwrap_or(0));
         (rune_id, db_rune)
     }
 
-    pub fn apply_cenotaph_etching(
-        &mut self,
-        rune: &Rune,
-        number: u32,
-        db_cache: &mut DbCache,
-    ) -> (RuneId, DbRune) {
+    pub fn apply_cenotaph_etching(&mut self, rune: &Rune, number: u32) -> (RuneId, DbRune) {
         let rune_id = RuneId {
             block: self.block_height,
             tx: self.tx_index,
@@ -145,19 +133,18 @@ impl TransactionCache {
             &self.tx_id,
             self.timestamp,
         );
-        db_cache.runes.push(db_rune.clone());
         self.etching = Some(db_rune.clone());
         self.runes.insert(rune_id.clone(), db_rune.clone());
         self.change_unallocated_rune_balance(&rune_id, 0);
         (rune_id, db_rune)
     }
 
-    pub fn apply_mint(&mut self, rune_id: &RuneId, db_rune: &DbRune, db_cache: &mut DbCache) {
+    pub fn apply_mint(&mut self, rune_id: &RuneId, db_rune: &DbRune) -> DbLedgerEntry {
         // TODO: What's the default mint amount if none was provided?
         let mint_amount = db_rune.terms_amount.unwrap_or(PgNumericU128(0));
         self.change_unallocated_rune_balance(rune_id, mint_amount.0);
         self.runes.insert(rune_id.clone(), db_rune.clone());
-        db_cache.ledger_entries.push(DbLedgerEntry::from_values(
+        DbLedgerEntry::from_values(
             mint_amount.0,
             db_rune.number.0,
             self.block_height,
@@ -167,20 +154,15 @@ impl TransactionCache {
             &"".to_string(),
             DbLedgerOperation::Mint,
             self.timestamp,
-        ));
+        )
         // TODO: Update rune minted total and number of mints
     }
 
-    pub fn apply_cenotaph_mint(
-        &mut self,
-        rune_id: &RuneId,
-        db_rune: &DbRune,
-        db_cache: &mut DbCache,
-    ) {
+    pub fn apply_cenotaph_mint(&mut self, rune_id: &RuneId, db_rune: &DbRune) -> DbLedgerEntry {
         // TODO: What's the default mint amount if none was provided?
         let mint_amount = db_rune.terms_amount.unwrap_or(PgNumericU128(0));
         self.runes.insert(rune_id.clone(), db_rune.clone());
-        db_cache.ledger_entries.push(DbLedgerEntry::from_values(
+        DbLedgerEntry::from_values(
             mint_amount.0,
             db_rune.number.0,
             self.block_height,
@@ -190,15 +172,15 @@ impl TransactionCache {
             &"".to_string(),
             DbLedgerOperation::Burn,
             self.timestamp,
-        ));
+        )
         // TODO: Update rune minted+burned total and number of mints+burns
     }
 
-    pub fn apply_edict(&mut self, edict: &Edict, db_rune: &DbRune, db_cache: &mut DbCache) {
+    pub fn apply_edict(&mut self, edict: &Edict, db_rune: &DbRune) -> Vec<DbLedgerEntry> {
         let rune_id = if edict.id.block == 0 && edict.id.tx == 0 {
             let Some(etching) = self.etching.as_ref() else {
                 // unreachable?
-                return;
+                return vec![];
             };
             etching.rune_id()
         } else {
@@ -206,8 +188,9 @@ impl TransactionCache {
         };
         let Some(mut unallocated) = self.unallocated_runes.get(&rune_id).copied() else {
             // no balance to allocate?
-            return;
+            return vec![];
         };
+        let mut results = vec![];
         match edict.output {
             // An edict with output equal to the number of transaction outputs allocates `amount` runes to each non-OP_RETURN
             // output in order.
@@ -228,21 +211,20 @@ impl TransactionCache {
                             extra = 1;
                             remainder -= 1;
                         }
-                        self.change_output_rune_balance(
+                        results.push(self.change_output_rune_balance(
                             output,
                             &rune_id,
                             db_rune,
                             per_output + extra,
-                            db_cache,
-                        );
+                        ));
                     }
                     unallocated = 0;
                 } else {
                     // Give `amount` to all outputs or until unallocated runs out.
                     for output in output_keys {
                         let amount = edict.amount.min(unallocated);
-                        self.change_output_rune_balance(
-                            output, &rune_id, db_rune, amount, db_cache,
+                        results.push(
+                            self.change_output_rune_balance(output, &rune_id, db_rune, amount),
                         );
                         unallocated -= amount;
                     }
@@ -255,7 +237,12 @@ impl TransactionCache {
                     amount = unallocated;
                     unallocated = 0;
                 }
-                self.change_output_rune_balance(edict.output, &rune_id, db_rune, amount, db_cache);
+                results.push(self.change_output_rune_balance(
+                    edict.output,
+                    &rune_id,
+                    db_rune,
+                    amount,
+                ));
             }
             _ => {
                 // TODO: what now?
@@ -263,6 +250,7 @@ impl TransactionCache {
         }
         self.runes.insert(rune_id.clone(), db_rune.clone());
         self.unallocated_runes.insert(rune_id.clone(), unallocated);
+        results
     }
 
     fn change_unallocated_rune_balance(&mut self, rune_id: &RuneId, delta: u128) {
@@ -280,8 +268,7 @@ impl TransactionCache {
         rune_id: &RuneId,
         db_rune: &DbRune,
         delta: u128,
-        db_cache: &mut DbCache,
-    ) {
+    ) -> DbLedgerEntry {
         if let Some(pointer_bal) = self.output_rune_balances.get_mut(&output) {
             if let Some(rune_bal) = pointer_bal.get(&rune_id).copied() {
                 pointer_bal.insert(rune_id.clone(), rune_bal + delta);
@@ -294,7 +281,7 @@ impl TransactionCache {
             self.output_rune_balances.insert(output, map);
         }
         let script = self.eligible_outputs.get(&output).unwrap();
-        db_cache.ledger_entries.push(DbLedgerEntry::from_values(
+        DbLedgerEntry::from_values(
             delta,
             db_rune.number.0,
             self.block_height,
@@ -306,6 +293,6 @@ impl TransactionCache {
                 .to_string(),
             DbLedgerOperation::Receive,
             self.timestamp,
-        ));
+        )
     }
 }
