@@ -27,7 +27,7 @@ impl ToSql for PgNumericU64 {
 }
 
 impl<'a> FromSql<'a> for PgNumericU64 {
-    fn from_sql(ty: &Type, raw: &'a [u8]) -> Result<PgNumericU64, Box<dyn Error + Sync + Send>> {
+    fn from_sql(_ty: &Type, raw: &'a [u8]) -> Result<PgNumericU64, Box<dyn Error + Sync + Send>> {
         let result = pg_numeric_bytes_to_u128(raw);
         Ok(PgNumericU64(result.to_u64().unwrap()))
     }

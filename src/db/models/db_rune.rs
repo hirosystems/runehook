@@ -46,7 +46,7 @@ impl DbRune {
             .rune
             .unwrap_or(Rune::reserved(block_height, tx_index));
         let spaced_name = if let Some(spacers) = etching.spacers {
-            let spaced_rune = SpacedRune::new(rune, etching.spacers.unwrap_or(0));
+            let spaced_rune = SpacedRune::new(rune, spacers);
             spaced_rune.to_string()
         } else {
             rune.to_string()

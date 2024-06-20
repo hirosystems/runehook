@@ -51,7 +51,7 @@ impl IndexCache {
     }
 
     /// Finalizes the current transaction index cache.
-    pub fn end_transaction(&mut self, db_tx: &mut Transaction<'_>, ctx: &Context) {
+    pub fn end_transaction(&mut self, _db_tx: &mut Transaction<'_>, ctx: &Context) {
         let entries = self.tx_cache.allocate_remaining_balances();
         for entry in entries.iter() {
             info!(
