@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use bitcoin::{Address, ScriptBuf};
+use bitcoin::{Address, Network, ScriptBuf};
 use chainhook_sdk::types::bitcoin::TxOut;
 use ordinals::{Cenotaph, Edict, Etching, Rune, RuneId, Runestone};
 
@@ -13,6 +13,7 @@ use crate::db::{
 
 /// Holds cached data relevant to a single transaction during indexing.
 pub struct TransactionCache {
+    network: Network,
     pub block_height: u64,
     pub tx_index: u32,
     pub tx_id: String,
@@ -34,8 +35,9 @@ pub struct TransactionCache {
 }
 
 impl TransactionCache {
-    pub fn new(block_height: u64, tx_index: u32, tx_id: &String, timestamp: u32) -> Self {
+    pub fn new(network: Network, block_height: u64, tx_index: u32, tx_id: &String, timestamp: u32) -> Self {
         TransactionCache {
+            network,
             block_height,
             tx_index,
             tx_id: tx_id.clone(),
@@ -305,7 +307,7 @@ impl TransactionCache {
             self.tx_index,
             &self.tx_id,
             output,
-            &Address::from_script(script, bitcoin::Network::Bitcoin)
+            &Address::from_script(script, self.network)
                 .unwrap()
                 .to_string(),
             DbLedgerOperation::Receive,

@@ -1,5 +1,6 @@
 use std::{collections::HashMap, num::NonZeroUsize, str::FromStr};
 
+use bitcoin::Network;
 use chainhook_sdk::{
     types::bitcoin::{TxIn, TxOut},
     utils::Context,
@@ -18,6 +19,7 @@ use super::{db_cache::DbCache, transaction_cache::TransactionCache};
 /// Holds rune data across multiple blocks for faster computations. Processes rune events as they happen during transactions and
 /// generates database rows for later insertion.
 pub struct IndexCache {
+    network: Network,
     next_rune_number: u32,
     runes: LruCache<RuneId, DbRune>,
     /// LRU cache for rune outputs. k = (tx_id, output), v = map(rune_id, amount)
@@ -28,13 +30,14 @@ pub struct IndexCache {
 }
 
 impl IndexCache {
-    pub fn new(lru_cache_size: usize, max_rune_number: u32) -> Self {
+    pub fn new(network: Network, lru_cache_size: usize, max_rune_number: u32) -> Self {
         let cap = NonZeroUsize::new(lru_cache_size).unwrap();
         IndexCache {
+            network,
             next_rune_number: max_rune_number + 1,
             runes: LruCache::new(cap),
             output_balances: LruCache::new(cap),
-            tx_cache: TransactionCache::new(1, 0, &"".to_string(), 0),
+            tx_cache: TransactionCache::new(network, 1, 0, &"".to_string(), 0),
             db_cache: DbCache::new(),
         }
     }
@@ -47,7 +50,8 @@ impl IndexCache {
         tx_id: &String,
         timestamp: u32,
     ) {
-        self.tx_cache = TransactionCache::new(block_height, tx_index, tx_id, timestamp);
+        self.tx_cache =
+            TransactionCache::new(self.network, block_height, tx_index, tx_id, timestamp);
     }
 
     /// Finalizes the current transaction index cache.

@@ -93,7 +93,7 @@ pub async fn scan_bitcoin_chainstate_via_rpc_using_predicate(
         .await
         .expect("Error creating postgres transaction");
     let max_rune_number = get_max_rune_number(&mut db_tx, ctx).await;
-    let mut index_cache = IndexCache::new(5000, max_rune_number);
+    let mut index_cache = IndexCache::new(bitcoin::Network::Bitcoin, 5000, max_rune_number);
     let _ = db_tx.rollback().await;
 
     while let Some(current_block_height) = block_heights_to_scan.pop_front() {
