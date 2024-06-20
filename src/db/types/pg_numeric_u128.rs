@@ -4,27 +4,30 @@ use std::{
 };
 
 use bytes::{BufMut, BytesMut};
-use num_bigint::BigInt;
 use num_traits::{ToPrimitive, Zero};
 use tokio_postgres::types::{to_sql_checked, FromSql, IsNull, ToSql, Type};
 
-pub fn write_big_uint_to_pg_numeric_bytes(num: BigInt, out: &mut BytesMut) {
+/// Transforms a u128 value into postgres' `numeric` wire format.
+pub fn u128_into_pg_numeric_bytes(number: u128, out: &mut BytesMut) {
+    let mut num = number.clone();
     let mut digits = vec![];
-
-    let mut n = num.clone();
-    let base_bigint = BigInt::from(10000);
-    while !n.is_zero() {
-        let remainder = (&n % &base_bigint).to_i16().unwrap();
-        n /= &base_bigint;
+    while !num.is_zero() {
+        let remainder = (num % 10000).to_i16().unwrap();
+        num /= 10000;
         digits.push(remainder);
     }
     digits.reverse();
 
     let num_digits = digits.len();
+    let weight = if num_digits.is_zero() {
+        0
+    } else {
+        num_digits - 1
+    };
     out.reserve(8 + num_digits * 2);
     out.put_u16(num_digits.try_into().unwrap());
-    out.put_i16((num_digits - 1) as i16);
-    out.put_u16(0x0000); // Always positive
+    out.put_i16(weight as i16); // Weight
+    out.put_u16(0x0000); // Sign: Always positive
     out.put_u16(0x0000); // No decimals
     for digit in digits[0..num_digits].iter() {
         out.put_i16(*digit);
@@ -37,8 +40,8 @@ fn read_two_bytes(cursor: &mut Cursor<&[u8]>) -> std::io::Result<[u8; 2]> {
     Ok(result)
 }
 
-// TODO: write tests for this
-pub fn big_uint_from_pg_numeric_bytes(raw: &[u8]) -> BigInt {
+/// Reads a u128 value from a postgres `numeric` wire format.
+pub fn pg_numeric_bytes_to_u128(raw: &[u8]) -> u128 {
     let mut raw = Cursor::new(raw);
     let num_groups = u16::from_be_bytes(read_two_bytes(&mut raw).unwrap());
     let weight = i16::from_be_bytes(read_two_bytes(&mut raw).unwrap());
@@ -50,27 +53,12 @@ pub fn big_uint_from_pg_numeric_bytes(raw: &[u8]) -> BigInt {
         groups.push(u16::from_be_bytes(read_two_bytes(&mut raw).unwrap()));
     }
 
-    let mut digits = groups.into_iter().collect::<Vec<_>>();
-    let integers_part_count = weight as i32 + 1;
-
-    let mut result = BigInt::ZERO;
-    if integers_part_count > 0 {
-        let (start_integers, last) = if integers_part_count > digits.len() as i32 {
-            (
-                integers_part_count - digits.len() as i32,
-                digits.len() as i32,
-            )
-        } else {
-            (0, integers_part_count)
-        };
-        let integers: Vec<_> = digits.drain(..last as usize).collect();
-        for digit in integers {
-            result = result.checked_mul(&BigInt::from(10000)).unwrap();
-            result = result.checked_add(&BigInt::from(digit)).unwrap();
-        }
-        result = result
-            .checked_mul(&BigInt::from(10000).pow(4 * start_integers as u32))
-            .unwrap();
+    let mut result = 0;
+    let zero: u16 = 0;
+    for i in 0..(weight + 1) {
+        let val = groups.get(i as usize).unwrap_or(&zero);
+        let next = (*val as u128) * 10000_u128.pow((weight - i) as u32);
+        result += next;
     }
     result
 }
@@ -84,9 +72,7 @@ impl ToSql for PgNumericU128 {
         _ty: &Type,
         out: &mut BytesMut,
     ) -> Result<IsNull, Box<dyn Error + Sync + Send>> {
-        let num =
-            BigInt::parse_bytes(&self.0.to_string().as_bytes(), 10).expect("Invalid number string");
-        write_big_uint_to_pg_numeric_bytes(num, out);
+        u128_into_pg_numeric_bytes(self.0, out);
         Ok(IsNull::No)
     }
 
@@ -99,11 +85,45 @@ impl ToSql for PgNumericU128 {
 
 impl<'a> FromSql<'a> for PgNumericU128 {
     fn from_sql(_ty: &Type, raw: &'a [u8]) -> Result<PgNumericU128, Box<dyn Error + Sync + Send>> {
-        let result = big_uint_from_pg_numeric_bytes(raw);
+        let result = pg_numeric_bytes_to_u128(raw);
         Ok(PgNumericU128(result.to_u128().unwrap()))
     }
 
     fn accepts(ty: &Type) -> bool {
         ty.name() == "numeric"
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use test_case::test_case;
+    use tokio_postgres::NoTls;
+
+    use super::PgNumericU128;
+
+    #[test_case(340282366920938463463374607431768211455; "u128 max")]
+    #[test_case(80000000000000000; "with trailing zeros")]
+    #[test_case(0; "zero")]
+    #[tokio::test]
+    async fn test_u128_to_postgres(val: u128) {
+        let (mut client, connection) =
+            tokio_postgres::connect("host=localhost user=postgres", NoTls)
+                .await
+                .unwrap();
+        tokio::spawn(async move {
+            if let Err(e) = connection.await {
+                eprintln!("connection error: {}", e);
+            }
+        });
+        let value = PgNumericU128(val);
+        let tx = client.transaction().await.unwrap();
+        let _ = tx.query("CREATE TABLE test (value NUMERIC)", &[]).await;
+        let _ = tx
+            .query("INSERT INTO test (value) VALUES ($1)", &[&value])
+            .await;
+        let row = tx.query_one("SELECT value FROM test", &[]).await.unwrap();
+        let res: PgNumericU128 = row.get("value");
+        let _ = tx.rollback().await;
+        assert_eq!(res.0, value.0);
     }
 }
