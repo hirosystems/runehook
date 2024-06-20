@@ -8,7 +8,7 @@ use crate::db::{
     models::{
         db_ledger_entry::DbLedgerEntry, db_ledger_operation::DbLedgerOperation, db_rune::DbRune,
     },
-    types::PgNumericU128,
+    types::pg_numeric_u128::PgNumericU128,
 };
 
 /// Holds cached data relevant to a single transaction during indexing.

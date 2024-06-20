@@ -157,7 +157,7 @@ impl IndexCache {
             "Mint {} {} at block {}",
             db_rune.spaced_name.clone(),
             ledger_entry.amount.0,
-            db_rune.block_height.0
+            ledger_entry.block_height.0
         );
         self.add_ledger_entries_to_db_cache(vec![ledger_entry]);
     }
@@ -178,7 +178,7 @@ impl IndexCache {
             "Mint cenotaph {} {} at block {}",
             db_rune.spaced_name.clone(),
             ledger_entry.amount.0,
-            db_rune.block_height.0
+            ledger_entry.block_height.0
         );
         self.add_ledger_entries_to_db_cache(vec![ledger_entry]);
     }
@@ -195,7 +195,7 @@ impl IndexCache {
                 "Edict {} {} at block {}",
                 db_rune.spaced_name.clone(),
                 entry.amount.0,
-                db_rune.block_height.0
+                entry.block_height.0
             );
         }
         self.add_ledger_entries_to_db_cache(entries);

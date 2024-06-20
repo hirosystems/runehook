@@ -1,6 +1,8 @@
 use ordinals::RuneId;
 
-use crate::db::types::{PgBigIntU32, PgNumericU128, PgNumericU64};
+use crate::db::types::{
+    pg_bigint_u32::PgBigIntU32, pg_numeric_u128::PgNumericU128, pg_numeric_u64::PgNumericU64,
+};
 
 use super::db_ledger_operation::DbLedgerOperation;
 

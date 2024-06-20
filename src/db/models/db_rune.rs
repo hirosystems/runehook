@@ -1,7 +1,10 @@
 use ordinals::{Etching, Rune, RuneId, SpacedRune};
 use tokio_postgres::Row;
 
-use crate::db::types::{PgBigIntU32, PgNumericU128, PgNumericU64, PgSmallIntU8};
+use crate::db::types::{
+    pg_bigint_u32::PgBigIntU32, pg_numeric_u128::PgNumericU128, pg_numeric_u64::PgNumericU64,
+    pg_smallint_u8::PgSmallIntU8,
+};
 
 /// A row in the `runes` table.
 #[derive(Debug, Clone)]

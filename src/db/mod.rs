@@ -5,7 +5,9 @@ use models::{db_ledger_entry::DbLedgerEntry, db_rune::DbRune};
 use ordinals::RuneId;
 use refinery::embed_migrations;
 use tokio_postgres::{types::ToSql, Client, Error, NoTls, Transaction};
-use types::{PgBigIntU32, PgNumericU128, PgNumericU64};
+use types::{
+    pg_bigint_u32::PgBigIntU32, pg_numeric_u128::PgNumericU128, pg_numeric_u64::PgNumericU64,
+};
 
 pub mod cache;
 pub mod index;
