@@ -35,7 +35,13 @@ pub struct TransactionCache {
 }
 
 impl TransactionCache {
-    pub fn new(network: Network, block_height: u64, tx_index: u32, tx_id: &String, timestamp: u32) -> Self {
+    pub fn new(
+        network: Network,
+        block_height: u64,
+        tx_index: u32,
+        tx_id: &String,
+        timestamp: u32,
+    ) -> Self {
         TransactionCache {
             network,
             block_height,

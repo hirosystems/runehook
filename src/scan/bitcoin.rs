@@ -1,14 +1,14 @@
+use crate::bitcoind::bitcoind_get_block_height;
 use crate::config::Config;
 use crate::db::cache::index_cache::IndexCache;
 use crate::db::index::index_block;
-use crate::db::{get_max_rune_number, init_db};
-use chainhook_sdk::bitcoincore_rpc::RpcApi;
-use chainhook_sdk::bitcoincore_rpc::{Auth, Client};
 use chainhook_sdk::chainhooks::bitcoin::{
     evaluate_bitcoin_chainhooks_on_chain_event, handle_bitcoin_hook_action,
     BitcoinChainhookOccurrence, BitcoinTriggerChainhook,
 };
-use chainhook_sdk::chainhooks::types::BitcoinChainhookSpecification;
+use chainhook_sdk::chainhooks::types::{
+    BitcoinChainhookSpecification, BitcoinPredicateType, RunesOperations,
+};
 use chainhook_sdk::indexer::bitcoin::{
     build_http_client, download_and_parse_block_with_retry, retrieve_block_hash_with_retry,
     standardize_bitcoin_block,
@@ -19,26 +19,55 @@ use chainhook_sdk::types::{
 };
 use chainhook_sdk::utils::{file_append, send_request, BlockHeights, Context};
 use std::collections::HashMap;
+use tokio_postgres::Client;
+
+pub async fn scan_blocks(
+    blocks: Vec<u64>,
+    config: &Config,
+    pg_client: &mut Client,
+    index_cache: &mut IndexCache,
+    ctx: &Context,
+) -> Result<(), String> {
+    let predicate = BitcoinChainhookSpecification {
+        uuid: format!("runehook-internal-trigger"),
+        owner_uuid: None,
+        name: format!("runehook-internal-trigger"),
+        network: config.event_observer.bitcoin_network.clone(),
+        version: 1,
+        blocks: Some(blocks),
+        start_block: None,
+        end_block: None,
+        expired_at: None,
+        expire_after_occurrence: None,
+        predicate: BitcoinPredicateType::RunesProtocol(RunesOperations::Feed),
+        action: chainhook_sdk::chainhooks::types::HookAction::Noop,
+        include_proof: false,
+        include_inputs: true,
+        include_outputs: false,
+        include_witness: false,
+        enabled: true,
+    };
+    scan_bitcoin_chainstate_via_rpc_using_predicate(
+        &predicate,
+        &config,
+        None,
+        pg_client,
+        index_cache,
+        &ctx,
+    )
+    .await?;
+    Ok(())
+}
 
 pub async fn scan_bitcoin_chainstate_via_rpc_using_predicate(
     predicate_spec: &BitcoinChainhookSpecification,
     config: &Config,
     event_observer_config_override: Option<&EventObserverConfig>,
+    pg_client: &mut Client,
+    index_cache: &mut IndexCache,
     ctx: &Context,
 ) -> Result<(), String> {
-    let auth = Auth::UserPass(
-        config.event_observer.bitcoind_rpc_username.clone(),
-        config.event_observer.bitcoind_rpc_username.clone(),
-    );
-
-    let bitcoin_rpc = match Client::new(&config.event_observer.bitcoind_rpc_url, auth) {
-        Ok(con) => con,
-        Err(message) => {
-            return Err(format!("Bitcoin RPC error: {}", message.to_string()));
-        }
-    };
     let mut floating_end_block = false;
-
     let block_heights_to_scan_res = if let Some(ref blocks) = predicate_spec.blocks {
         BlockHeights::Blocks(blocks.clone()).get_sorted_entries()
     } else {
@@ -53,15 +82,7 @@ pub async fn scan_bitcoin_chainstate_via_rpc_using_predicate(
         };
         let (end_block, update_end_block) = match predicate_spec.end_block {
             Some(end_block) => (end_block, false),
-            None => match bitcoin_rpc.get_blockchain_info() {
-                Ok(result) => (result.blocks, true),
-                Err(e) => {
-                    return Err(format!(
-                        "unable to retrieve Bitcoin chain tip ({})",
-                        e.to_string()
-                    ));
-                }
-            },
+            None => (bitcoind_get_block_height(config, ctx), true),
         };
         floating_end_block = update_end_block;
         BlockHeights::BlockRange(start_block, end_block).get_sorted_entries()
@@ -76,7 +97,7 @@ pub async fn scan_bitcoin_chainstate_via_rpc_using_predicate(
         block_heights_to_scan.len()
     );
     let mut actions_triggered = 0;
-    let mut err_count = 0;
+    let mut _err_count = 0;
 
     let event_observer_config = match event_observer_config_override {
         Some(config_override) => config_override.clone(),
@@ -85,16 +106,6 @@ pub async fn scan_bitcoin_chainstate_via_rpc_using_predicate(
     let bitcoin_config = event_observer_config.get_bitcoin_config();
     let mut number_of_blocks_scanned = 0;
     let http_client = build_http_client();
-
-    let mut pg_client = init_db(ctx).await.expect("Error initializing postgres db");
-
-    let mut db_tx = pg_client
-        .transaction()
-        .await
-        .expect("Error creating postgres transaction");
-    let max_rune_number = get_max_rune_number(&mut db_tx, ctx).await;
-    let mut index_cache = IndexCache::new(bitcoin::Network::Bitcoin, 5000, max_rune_number);
-    let _ = db_tx.rollback().await;
 
     while let Some(current_block_height) = block_heights_to_scan.pop_front() {
         number_of_blocks_scanned += 1;
@@ -109,12 +120,11 @@ pub async fn scan_bitcoin_chainstate_via_rpc_using_predicate(
         let raw_block =
             download_and_parse_block_with_retry(&http_client, &block_hash, &bitcoin_config, ctx)
                 .await?;
-
         let mut block =
             standardize_bitcoin_block(raw_block, &config.event_observer.bitcoin_network, ctx)
                 .unwrap();
 
-        index_block(&mut pg_client, &mut index_cache, &mut block, ctx).await;
+        index_block(pg_client, index_cache, &mut block, ctx).await;
 
         match process_block_with_predicates(
             block,
@@ -125,7 +135,25 @@ pub async fn scan_bitcoin_chainstate_via_rpc_using_predicate(
         .await
         {
             Ok(actions) => actions_triggered += actions,
-            Err(_) => err_count += 1,
+            Err(_) => _err_count += 1,
+        }
+
+        // If we configured a "floating" end block, update the scan range with newer blocks that might have arrived to bitcoind.
+        if block_heights_to_scan.is_empty() && floating_end_block {
+            let bitcoind_tip = bitcoind_get_block_height(config, ctx);
+            let new_tip = match predicate_spec.end_block {
+                Some(end_block) => {
+                    if end_block > bitcoind_tip {
+                        bitcoind_tip
+                    } else {
+                        end_block
+                    }
+                }
+                None => bitcoind_tip,
+            };
+            for entry in (current_block_height + 1)..new_tip {
+                block_heights_to_scan.push_back(entry);
+            }
         }
     }
     info!(
@@ -136,7 +164,7 @@ pub async fn scan_bitcoin_chainstate_via_rpc_using_predicate(
     Ok(())
 }
 
-pub async fn process_block_with_predicates(
+async fn process_block_with_predicates(
     block: BitcoinBlockData,
     predicates: &Vec<&BitcoinChainhookSpecification>,
     event_observer_config: &EventObserverConfig,
@@ -154,7 +182,7 @@ pub async fn process_block_with_predicates(
     execute_predicates_action(predicates_triggered, &event_observer_config, &ctx).await
 }
 
-pub async fn execute_predicates_action<'a>(
+async fn execute_predicates_action<'a>(
     hits: Vec<BitcoinTriggerChainhook<'a>>,
     config: &EventObserverConfig,
     ctx: &Context,

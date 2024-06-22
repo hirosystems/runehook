@@ -1,14 +1,10 @@
-use std::{
-    fs::File,
-    io::{BufReader, Read},
-};
-
-use chainhook_sdk::{observer::EventObserverConfigOverrides, types::BitcoinNetwork};
+use chainhook_sdk::observer::EventObserverConfigOverrides;
 
 use super::Config;
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct ConfigFile {
+    // pub database: DatabaseConfigFile,
     pub network: Option<EventObserverConfigOverrides>,
 }
 
@@ -38,8 +34,10 @@ pub struct LogConfigFile {
 }
 
 #[derive(Deserialize, Debug, Clone)]
-pub struct StorageConfigFile {
-    pub working_dir: Option<String>,
+pub struct DatabaseConfigFile {
+    pub database: Option<String>,
+    pub username: Option<String>,
+    pub password: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Clone)]

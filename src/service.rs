@@ -1,7 +1,11 @@
 use std::sync::mpsc::channel;
 
+use crate::bitcoind::bitcoind_get_block_height;
 use crate::config::Config;
-use crate::db::init_db;
+use crate::db::cache::new_index_cache;
+use crate::db::index::index_block;
+use crate::db::{pg_connect, pg_get_block_height};
+use crate::scan::bitcoin::scan_blocks;
 use chainhook_sdk::observer::BitcoinBlockDataCached;
 use chainhook_sdk::types::BlockIdentifier;
 use chainhook_sdk::{
@@ -12,25 +16,41 @@ use chainhook_sdk::{
 use crossbeam_channel::select;
 
 pub async fn start_service(config: &Config, ctx: &Context) -> Result<(), String> {
-    let ctx_moved = ctx.clone();
-    let _init_db_res = match init_db(ctx).await {
-        Ok(res) => res,
-        Err(e) => {
-            error!(
-                ctx_moved.expect_logger(),
-                "Init DB error: {}",
-                e.to_string(),
-            );
-            std::process::exit(1);
-        }
-    };
+    let mut pg_client = pg_connect(&config, true, ctx).await;
 
     let (observer_cmd_tx, observer_cmd_rx) = channel();
     let (observer_event_tx, observer_event_rx) = crossbeam_channel::unbounded();
-
     let observer_sidecar = set_up_observer_sidecar_runloop(config, ctx)?;
 
-    // Start chainhook event observer
+    let mut index_cache = new_index_cache(&mut pg_client, ctx).await;
+    let chain_tip = pg_get_block_height(&mut pg_client, ctx)
+        .await
+        .unwrap_or(840_000);
+    loop {
+        let bitcoind_chain_tip = bitcoind_get_block_height(config, ctx);
+        if bitcoind_chain_tip < chain_tip {
+            info!(
+                ctx.expect_logger(),
+                "Waiting for bitcoind to reach height {}, currently at {}",
+                chain_tip,
+                bitcoind_chain_tip
+            );
+            std::thread::sleep(std::time::Duration::from_secs(10));
+        } else if bitcoind_chain_tip > chain_tip {
+            // Scan until we get to chain tip
+            scan_blocks(
+                ((chain_tip + 1)..bitcoind_chain_tip).collect(),
+                config,
+                &mut pg_client,
+                &mut index_cache,
+                ctx,
+            )
+            .await?;
+            break;
+        }
+    }
+
+    // Start chainhook event observer, we're at chain tip.
     let event_observer_config = config.event_observer.clone();
     let context = if config.event_observer.display_logs {
         ctx.clone()
@@ -51,10 +71,6 @@ pub async fn start_service(config: &Config, ctx: &Context) -> Result<(), String>
         )
         .expect("unable to start Stacks chain observer");
     });
-
-    let context_cloned = ctx.clone();
-    let config_cloned = config.clone();
-
     info!(ctx.expect_logger(), "Listening for new blocks",);
 
     loop {
@@ -72,9 +88,13 @@ pub async fn start_service(config: &Config, ctx: &Context) -> Result<(), String>
 
         match event {
             ObserverEvent::BitcoinChainEvent((
-                BitcoinChainEvent::ChainUpdatedWithBlocks(blocks),
+                BitcoinChainEvent::ChainUpdatedWithBlocks(mut event),
                 _,
-            )) => {}
+            )) => {
+                for block in event.new_blocks.iter_mut() {
+                    index_block(&mut pg_client, &mut index_cache, block, ctx).await;
+                }
+            }
             ObserverEvent::Terminate => {}
             _ => {}
         }
@@ -113,7 +133,7 @@ pub fn set_up_observer_sidecar_runloop(
                 }
             }
             recv(chain_event_notifier_rx) -> msg => {
-                if let Ok(command) = msg {
+                if let Ok(_command) = msg {
                     //
                 }
             }
@@ -126,8 +146,8 @@ pub fn set_up_observer_sidecar_runloop(
 pub fn chainhook_sidecar_mutate_blocks(
     blocks_to_mutate: &mut Vec<BitcoinBlockDataCached>,
     blocks_ids_to_rollback: &Vec<BlockIdentifier>,
-    config: &Config,
-    ctx: &Context,
+    _config: &Config,
+    _ctx: &Context,
 ) {
     for _block_id_to_rollback in blocks_ids_to_rollback.iter() {
         // Delete local caches

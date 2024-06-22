@@ -6,6 +6,7 @@ extern crate serde_derive;
 
 extern crate serde;
 
+pub mod bitcoind;
 pub mod cli;
 pub mod config;
 pub mod db;

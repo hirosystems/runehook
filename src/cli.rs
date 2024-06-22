@@ -1,13 +1,11 @@
 use clap::{Parser, Subcommand};
 
-use chainhook_sdk::{
-    chainhooks::types::{BitcoinChainhookSpecification, BitcoinPredicateType, RunesOperations},
-    utils::{BlockHeights, Context},
-};
+use chainhook_sdk::utils::{BlockHeights, Context};
 
 use crate::{
     config::{generator::generate_config, Config},
-    scan::bitcoin::scan_bitcoin_chainstate_via_rpc_using_predicate,
+    db::{cache::new_index_cache, pg_connect},
+    scan::bitcoin::scan_blocks,
     service::start_service,
 };
 
@@ -148,36 +146,15 @@ async fn handle_command(opts: Opts, ctx: Context) -> Result<(), String> {
             println!("Created file Chainhook.toml");
         }
         Command::Stream(StreamCommand::Start(cmd)) => {
-            // Start stream
             let config = Config::from_file_path(&cmd.config_path)?;
             start_service(&config, &ctx).await?;
         }
         Command::Scan(ScanCommand::Start(cmd)) => {
-            // Start scan
             let config = Config::from_file_path(&cmd.config_path)?;
             let blocks = cmd.get_blocks();
-            let predicate = BitcoinChainhookSpecification {
-                uuid: format!("ordhook-internal-trigger"),
-                owner_uuid: None,
-                name: format!("ordhook-internal-trigger"),
-                network: config.event_observer.bitcoin_network.clone(),
-                version: 1,
-                blocks: Some(blocks),
-                start_block: None,
-                end_block: None,
-                expired_at: None,
-                expire_after_occurrence: None,
-                predicate: BitcoinPredicateType::RunesProtocol(RunesOperations::Feed),
-                action: chainhook_sdk::chainhooks::types::HookAction::Noop,
-                include_proof: false,
-                include_inputs: true,
-                include_outputs: false,
-                include_witness: false,
-                enabled: true,
-            };
-
-            scan_bitcoin_chainstate_via_rpc_using_predicate(&predicate, &config, None, &ctx)
-                .await?;
+            let mut pg_client = pg_connect(&config, true, &ctx).await;
+            let mut index_cache = new_index_cache(&mut pg_client, &ctx).await;
+            scan_blocks(blocks, &config, &mut pg_client, &mut index_cache, &ctx).await?;
         }
     }
     Ok(())

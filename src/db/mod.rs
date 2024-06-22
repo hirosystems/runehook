@@ -9,6 +9,8 @@ use types::{
     pg_bigint_u32::PgBigIntU32, pg_numeric_u128::PgNumericU128, pg_numeric_u64::PgNumericU64,
 };
 
+use crate::config::Config;
+
 pub mod cache;
 pub mod index;
 pub mod models;
@@ -16,33 +18,51 @@ pub mod types;
 
 embed_migrations!("migrations");
 
-pub async fn init_db(ctx: &Context) -> Result<Client, Error> {
-    let (mut client, connection) =
-        tokio_postgres::connect("host=localhost user=postgres", NoTls).await?;
-    tokio::spawn(async move {
-        if let Err(e) = connection.await {
-            eprintln!("connection error: {}", e);
+pub async fn pg_connect(_config: &Config, run_migrations: bool, ctx: &Context) -> Client {
+    let mut pg_client: Client;
+    loop {
+        match tokio_postgres::connect("host=localhost user=postgres", NoTls).await {
+            Ok((client, connection)) => {
+                tokio::spawn(async move {
+                    if let Err(e) = connection.await {
+                        eprintln!("connection error: {}", e);
+                    }
+                });
+                pg_client = client;
+                break;
+            }
+            Err(e) => {
+                error!(
+                    ctx.expect_logger(),
+                    "Error connecting to postgres: {}",
+                    e.to_string()
+                );
+                std::thread::sleep(std::time::Duration::from_secs(1));
+            }
         }
-    });
+    }
 
-    info!(ctx.expect_logger(), "Running postgres migrations");
-    match migrations::runner()
-        .set_migration_table_name("pgmigrations")
-        .run_async(&mut client)
-        .await
-    {
-        Ok(_) => {}
-        Err(e) => {
-            error!(
-                ctx.expect_logger(),
-                "error running pg migrations: {}",
-                e.to_string()
-            )
-        }
-    };
-    info!(ctx.expect_logger(), "Postgres migrations complete");
+    if run_migrations {
+        info!(ctx.expect_logger(), "Running postgres migrations");
+        match migrations::runner()
+            .set_migration_table_name("pgmigrations")
+            .run_async(&mut pg_client)
+            .await
+        {
+            Ok(_) => {}
+            Err(e) => {
+                error!(
+                    ctx.expect_logger(),
+                    "error running pg migrations: {}",
+                    e.to_string()
+                );
+                panic!()
+            }
+        };
+        info!(ctx.expect_logger(), "Postgres migrations complete");
+    }
 
-    Ok(client)
+    pg_client
 }
 
 pub async fn insert_rune_rows(
@@ -141,16 +161,25 @@ pub async fn insert_ledger_entries(
     Ok(true)
 }
 
-pub async fn get_max_rune_number(db_tx: &mut Transaction<'_>, _ctx: &Context) -> u32 {
-    let rows = db_tx
-        .query("SELECT MAX(number) AS max FROM runes", &[])
+pub async fn pg_get_max_rune_number(client: &mut Client, _ctx: &Context) -> u32 {
+    let row = client
+        .query_opt("SELECT MAX(number) AS max FROM runes", &[])
         .await
         .expect("error getting max rune number");
-    let Some(row) = rows.get(0) else {
+    let Some(row) = row else {
         return 0;
     };
     let max: PgBigIntU32 = row.get("max");
     max.0
+}
+
+pub async fn pg_get_block_height(client: &mut Client, _ctx: &Context) -> Option<u64> {
+    let row = client
+        .query_opt("SELECT MAX(block_height) AS max FROM runes", &[])
+        .await
+        .expect("error getting max block height")?;
+    let max: PgNumericU64 = row.get("max");
+    Some(max.0)
 }
 
 pub async fn get_rune_by_rune_id(
