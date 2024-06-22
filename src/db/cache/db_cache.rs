@@ -2,7 +2,7 @@ use chainhook_sdk::utils::Context;
 use tokio_postgres::Transaction;
 
 use crate::db::{
-    insert_ledger_entries, insert_rune_rows,
+    pg_insert_ledger_entries, pg_insert_rune_rows,
     models::{db_ledger_entry::DbLedgerEntry, db_rune::DbRune},
 };
 
@@ -27,7 +27,7 @@ impl DbCache {
                 "Flushing {} rune rows",
                 self.runes.len()
             );
-            let _ = insert_rune_rows(&self.runes, db_tx, ctx).await;
+            let _ = pg_insert_rune_rows(&self.runes, db_tx, ctx).await;
             self.runes.clear();
         }
         if self.ledger_entries.len() > 0 {
@@ -36,7 +36,7 @@ impl DbCache {
                 "Flushing {} ledger rows",
                 self.ledger_entries.len()
             );
-            let _ = insert_ledger_entries(&self.ledger_entries, db_tx, ctx).await;
+            let _ = pg_insert_ledger_entries(&self.ledger_entries, db_tx, ctx).await;
             self.ledger_entries.clear();
         }
     }

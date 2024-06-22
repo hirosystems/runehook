@@ -23,7 +23,7 @@ enum Command {
     Config(ConfigCommand),
     /// Streaming blocks and indexing runes
     #[clap(subcommand)]
-    Stream(StreamCommand),
+    Service(ServiceCommand),
     /// Scanning blocks and indexing runes
     #[clap(subcommand)]
     Scan(ScanCommand),
@@ -64,7 +64,7 @@ struct NewConfig {
 
 #[derive(Subcommand, PartialEq, Clone, Debug)]
 #[clap(bin_name = "stream")]
-enum StreamCommand {
+enum ServiceCommand {
     /// Run a service
     #[clap(name = "start", bin_name = "start")]
     Start(StartStreamCommand),
@@ -145,7 +145,7 @@ async fn handle_command(opts: Opts, ctx: Context) -> Result<(), String> {
                 .map_err(|e| format!("unable to write file {}\n{}", file_path.display(), e))?;
             println!("Created file Chainhook.toml");
         }
-        Command::Stream(StreamCommand::Start(cmd)) => {
+        Command::Service(ServiceCommand::Start(cmd)) => {
             let config = Config::from_file_path(&cmd.config_path)?;
             start_service(&config, &ctx).await?;
         }

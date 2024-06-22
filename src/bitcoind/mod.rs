@@ -21,7 +21,7 @@ fn get_client(config: &Config, ctx: &Context) -> Client {
                     "bitcoind unable to get client: {}",
                     e.to_string()
                 );
-                std::thread::sleep(std::time::Duration::from_secs(10));
+                std::thread::sleep(std::time::Duration::from_secs(1));
             }
         }
     }
@@ -40,7 +40,7 @@ pub fn bitcoind_get_block_height(config: &Config, ctx: &Context) -> u64 {
                     "bitcoind unable to get block height: {}",
                     e.to_string()
                 );
-                std::thread::sleep(std::time::Duration::from_secs(10));
+                std::thread::sleep(std::time::Duration::from_secs(1));
             }
         };
     }

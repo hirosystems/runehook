@@ -4,8 +4,8 @@ use super::Config;
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct ConfigFile {
-    // pub database: DatabaseConfigFile,
     pub network: Option<EventObserverConfigOverrides>,
+    pub postgres: PostgresConfigFile,
 }
 
 impl ConfigFile {
@@ -34,8 +34,10 @@ pub struct LogConfigFile {
 }
 
 #[derive(Deserialize, Debug, Clone)]
-pub struct DatabaseConfigFile {
+pub struct PostgresConfigFile {
     pub database: Option<String>,
+    pub host: Option<String>,
+    pub port: Option<u16>,
     pub username: Option<String>,
     pub password: Option<String>,
 }

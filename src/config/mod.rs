@@ -8,8 +8,18 @@ use std::fs::File;
 use std::io::{BufReader, Read};
 
 #[derive(Clone, Debug)]
+pub struct PostgresConfig {
+    pub database: String,
+    pub host: String,
+    pub port: u16,
+    pub username: String,
+    pub password: Option<String>,
+}
+
+#[derive(Clone, Debug)]
 pub struct Config {
     pub event_observer: EventObserverConfig,
+    pub postgres: PostgresConfig,
 }
 
 impl Config {
@@ -35,7 +45,16 @@ impl Config {
         let event_observer =
             EventObserverConfig::new_using_overrides(config_file.network.as_ref())?;
 
-        let config = Config { event_observer };
+        let config = Config {
+            event_observer,
+            postgres: PostgresConfig {
+                database: config_file.postgres.database.unwrap_or("postgres".to_string()),
+                host: config_file.postgres.host.unwrap_or("localhost".to_string()),
+                port: config_file.postgres.port.unwrap_or(5432),
+                username: config_file.postgres.username.unwrap_or("postgres".to_string()),
+                password: config_file.postgres.password,
+            },
+        };
         Ok(config)
     }
 }

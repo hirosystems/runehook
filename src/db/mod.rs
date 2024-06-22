@@ -18,10 +18,20 @@ pub mod types;
 
 embed_migrations!("migrations");
 
-pub async fn pg_connect(_config: &Config, run_migrations: bool, ctx: &Context) -> Client {
+pub async fn pg_connect(config: &Config, run_migrations: bool, ctx: &Context) -> Client {
+    let mut pg_config = tokio_postgres::Config::new();
+    pg_config
+        .dbname(&config.postgres.database)
+        .host(&config.postgres.host)
+        .port(config.postgres.port)
+        .user(&config.postgres.username);
+    if let Some(password) = config.postgres.password.as_ref() {
+        pg_config.password(password);
+    }
+
     let mut pg_client: Client;
     loop {
-        match tokio_postgres::connect("host=localhost user=postgres", NoTls).await {
+        match pg_config.connect(NoTls).await {
             Ok((client, connection)) => {
                 tokio::spawn(async move {
                     if let Err(e) = connection.await {
@@ -65,7 +75,7 @@ pub async fn pg_connect(_config: &Config, run_migrations: bool, ctx: &Context) -
     pg_client
 }
 
-pub async fn insert_rune_rows(
+pub async fn pg_insert_rune_rows(
     rows: &Vec<DbRune>,
     db_tx: &mut Transaction<'_>,
     ctx: &Context,
@@ -117,7 +127,7 @@ pub async fn insert_rune_rows(
     Ok(true)
 }
 
-pub async fn insert_ledger_entries(
+pub async fn pg_insert_ledger_entries(
     rows: &Vec<DbLedgerEntry>,
     db_tx: &mut Transaction<'_>,
     ctx: &Context,
@@ -182,7 +192,7 @@ pub async fn pg_get_block_height(client: &mut Client, _ctx: &Context) -> Option<
     Some(max.0)
 }
 
-pub async fn get_rune_by_rune_id(
+pub async fn pg_get_rune_by_rune_id(
     rune_id: &RuneId,
     db_tx: &mut Transaction<'_>,
     ctx: &Context,
@@ -211,7 +221,7 @@ pub async fn get_rune_by_rune_id(
 }
 
 /// Returns a `HashMap` of rune balances for a list of outputs.
-pub async fn get_output_rune_balances(
+pub async fn pg_get_output_rune_balances(
     outputs: Vec<(String, u32)>,
     db_tx: &mut Transaction<'_>,
     ctx: &Context,

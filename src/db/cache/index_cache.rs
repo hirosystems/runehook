@@ -10,7 +10,7 @@ use ordinals::{Cenotaph, Edict, Etching, Rune, RuneId, Runestone};
 use tokio_postgres::Transaction;
 
 use crate::db::{
-    get_output_rune_balances, get_rune_by_rune_id,
+    pg_get_output_rune_balances, pg_get_rune_by_rune_id,
     models::{db_ledger_entry::DbLedgerEntry, db_rune::DbRune},
 };
 
@@ -220,7 +220,7 @@ impl IndexCache {
         }
         // Cache miss, look in DB.
         self.db_cache.flush(db_tx, ctx).await;
-        let Some(db_rune) = get_rune_by_rune_id(rune_id, db_tx, ctx).await else {
+        let Some(db_rune) = pg_get_rune_by_rune_id(rune_id, db_tx, ctx).await else {
             return None;
         };
         self.runes.put(rune_id.clone(), db_rune.clone());
@@ -257,7 +257,7 @@ impl IndexCache {
         if cache_misses.len() > 0 {
             // Look for misses in the DB
             self.db_cache.flush(db_tx, ctx).await;
-            if let Some(output_balances) = get_output_rune_balances(cache_misses, db_tx, ctx).await
+            if let Some(output_balances) = pg_get_output_rune_balances(cache_misses, db_tx, ctx).await
             {
                 for (k, v) in output_balances.iter() {
                     if let Some(balance) = balances.get(k) {
