@@ -1,4 +1,8 @@
-use std::{collections::HashMap, num::NonZeroUsize, str::FromStr};
+use std::{
+    collections::{HashMap, VecDeque},
+    num::NonZeroUsize,
+    str::FromStr,
+};
 
 use bitcoin::Network;
 use chainhook_sdk::{
@@ -10,22 +14,30 @@ use ordinals::{Cenotaph, Edict, Etching, Rune, RuneId, Runestone};
 use tokio_postgres::Transaction;
 
 use crate::db::{
-    pg_get_output_rune_balances, pg_get_rune_by_rune_id,
-    models::{db_ledger_entry::DbLedgerEntry, db_rune::DbRune},
+    models::{
+        db_ledger_entry::DbLedgerEntry, db_ledger_operation::DbLedgerOperation, db_rune::DbRune,
+    },
+    pg_get_missed_input_rune_balances, pg_get_rune_by_rune_id,
 };
 
-use super::{db_cache::DbCache, transaction_cache::TransactionCache};
+use super::{
+    db_cache::DbCache,
+    transaction_cache::{InputRuneBalance, TransactionCache},
+};
 
 /// Holds rune data across multiple blocks for faster computations. Processes rune events as they happen during transactions and
 /// generates database rows for later insertion.
 pub struct IndexCache {
     network: Network,
+    /// Number to be assigned to the next rune etching.
     next_rune_number: u32,
-    runes: LruCache<RuneId, DbRune>,
-    /// LRU cache for rune outputs. k = (tx_id, output), v = map(rune_id, amount)
-    output_balances: LruCache<(String, u32), HashMap<RuneId, u128>>,
+    /// LRU cache for runes.
+    rune_cache: LruCache<RuneId, DbRune>,
+    /// LRU cache for outputs with rune balances.
+    output_cache: LruCache<(String, u32), HashMap<RuneId, Vec<InputRuneBalance>>>,
     /// Holds a single transaction's rune cache. Must be cleared every time a new transaction is processed.
     tx_cache: TransactionCache,
+    /// Keeps rows that have not yet been inserted in the DB.
     pub db_cache: DbCache,
 }
 
@@ -35,8 +47,8 @@ impl IndexCache {
         IndexCache {
             network,
             next_rune_number: max_rune_number + 1,
-            runes: LruCache::new(cap),
-            output_balances: LruCache::new(cap),
+            rune_cache: LruCache::new(cap),
+            output_cache: LruCache::new(cap),
             tx_cache: TransactionCache::new(network, 1, 0, &"".to_string(), 0),
             db_cache: DbCache::new(),
         }
@@ -66,7 +78,7 @@ impl IndexCache {
                 entry.block_height.0
             );
         }
-        self.add_ledger_entries_to_db_cache(entries);
+        self.add_ledger_entries_to_db_cache(&entries);
     }
 
     pub async fn apply_runestone(
@@ -104,7 +116,7 @@ impl IndexCache {
         );
         self.scan_tx_input_rune_balance(tx_inputs, db_tx, ctx).await;
         let entries = self.tx_cache.apply_cenotaph_input_burn(cenotaph);
-        self.add_ledger_entries_to_db_cache(entries);
+        self.add_ledger_entries_to_db_cache(&entries);
     }
 
     pub async fn apply_etching(
@@ -121,7 +133,7 @@ impl IndexCache {
             db_rune.block_height.0
         );
         self.db_cache.runes.push(db_rune.clone());
-        self.runes.put(rune_id, db_rune);
+        self.rune_cache.put(rune_id, db_rune);
         self.next_rune_number += 1;
     }
 
@@ -141,7 +153,7 @@ impl IndexCache {
             db_rune.block_height.0
         );
         self.db_cache.runes.push(db_rune.clone());
-        self.runes.put(rune_id, db_rune);
+        self.rune_cache.put(rune_id, db_rune);
         self.next_rune_number += 1;
     }
 
@@ -163,7 +175,7 @@ impl IndexCache {
             ledger_entry.amount.0,
             ledger_entry.block_height.0
         );
-        self.add_ledger_entries_to_db_cache(vec![ledger_entry]);
+        self.add_ledger_entries_to_db_cache(&vec![ledger_entry]);
     }
 
     pub async fn apply_cenotaph_mint(
@@ -184,7 +196,7 @@ impl IndexCache {
             ledger_entry.amount.0,
             ledger_entry.block_height.0
         );
-        self.add_ledger_entries_to_db_cache(vec![ledger_entry]);
+        self.add_ledger_entries_to_db_cache(&vec![ledger_entry]);
     }
 
     pub async fn apply_edict(&mut self, edict: &Edict, db_tx: &mut Transaction<'_>, ctx: &Context) {
@@ -202,7 +214,7 @@ impl IndexCache {
                 entry.block_height.0
             );
         }
-        self.add_ledger_entries_to_db_cache(entries);
+        self.add_ledger_entries_to_db_cache(&entries);
     }
 
     async fn get_cached_rune_by_rune_id(
@@ -215,7 +227,7 @@ impl IndexCache {
         if rune_id.block == 0 && rune_id.tx == 0 {
             return self.tx_cache.etching.clone();
         }
-        if let Some(cached_rune) = self.runes.get(&rune_id) {
+        if let Some(cached_rune) = self.rune_cache.get(&rune_id) {
             return Some(cached_rune.clone());
         }
         // Cache miss, look in DB.
@@ -223,73 +235,80 @@ impl IndexCache {
         let Some(db_rune) = pg_get_rune_by_rune_id(rune_id, db_tx, ctx).await else {
             return None;
         };
-        self.runes.put(rune_id.clone(), db_rune.clone());
+        self.rune_cache.put(rune_id.clone(), db_rune.clone());
         return Some(db_rune);
     }
 
+    /// Takes all transaction inputs and transform them into rune balances to be allocated.
     async fn scan_tx_input_rune_balance(
         &mut self,
         tx_inputs: &Vec<TxIn>,
         db_tx: &mut Transaction<'_>,
         ctx: &Context,
     ) {
-        // Take all transaction inputs and transform them into rune balances to be allocated.
-        let mut balances = HashMap::new();
+        // Maps input index to all of its rune balances. Useful in order to keep rune inputs in order.
+        let mut indexed_input_runes = HashMap::new();
+
+        // Look in memory cache.
         let mut cache_misses = vec![];
-        for input in tx_inputs {
-            let key = (
-                input.previous_output.txid.hash[2..].to_string(),
-                input.previous_output.vout,
-            );
-            // Look in the cache.
-            if let Some(output_balance) = self.output_balances.get(&key) {
-                for (k, v) in output_balance.iter() {
-                    if let Some(balance) = balances.get(k) {
-                        balances.insert(k.clone(), *v + *balance);
-                    } else {
-                        balances.insert(k.clone(), *v);
-                    }
-                }
+        for (i, input) in tx_inputs.iter().enumerate() {
+            let tx_id = input.previous_output.txid.hash[2..].to_string();
+            let vout = input.previous_output.vout;
+            if let Some(map) = self.output_cache.get(&(tx_id.clone(), vout)) {
+                indexed_input_runes.insert(i as u32, map.clone());
             } else {
-                cache_misses.push(key);
+                cache_misses.push((i as u32, tx_id, vout));
             }
         }
+
+        // Look for misses in database.
         if cache_misses.len() > 0 {
-            // Look for misses in the DB
-            self.db_cache.flush(db_tx, ctx).await;
-            if let Some(output_balances) = pg_get_output_rune_balances(cache_misses, db_tx, ctx).await
-            {
-                for (k, v) in output_balances.iter() {
-                    if let Some(balance) = balances.get(k) {
-                        balances.insert(k.clone(), *v + *balance);
-                    } else {
-                        balances.insert(k.clone(), *v);
-                    }
+            // self.db_cache.flush(db_tx, ctx).await;
+            let output_balances = pg_get_missed_input_rune_balances(cache_misses, db_tx, ctx).await;
+            indexed_input_runes.extend(output_balances);
+        }
+
+        let mut final_input_runes: HashMap<RuneId, VecDeque<InputRuneBalance>> = HashMap::new();
+        let mut input_keys: Vec<u32> = indexed_input_runes.keys().copied().collect();
+        input_keys.sort();
+        for key in input_keys.iter() {
+            let input_value = indexed_input_runes.get(key).unwrap();
+            for (rune_id, vec) in input_value.iter() {
+                if let Some(rune) = final_input_runes.get_mut(rune_id) {
+                    rune.extend(vec.clone());
+                } else {
+                    final_input_runes.insert(*rune_id, VecDeque::from(vec.clone()));
                 }
             }
         }
-        self.tx_cache.unallocate_input_rune_balance(balances);
+
+        self.tx_cache.set_input_rune_balances(final_input_runes);
     }
 
-    fn add_ledger_entries_to_db_cache(&mut self, entries: Vec<DbLedgerEntry>) {
-        for entry in entries {
-            // Add to output LRU cache.
+    fn add_ledger_entries_to_db_cache(&mut self, entries: &Vec<DbLedgerEntry>) {
+        self.db_cache.ledger_entries.extend(entries.clone());
+        // Add to output LRU cache if it's received balance.
+        for entry in entries.iter() {
+            if entry.operation != DbLedgerOperation::Receive {
+                continue;
+            }
             let k = (entry.tx_id.clone(), entry.output.0);
             let rune_id = RuneId::from_str(entry.rune_id.as_str()).unwrap();
-            let amount = entry.amount.0;
-            if let Some(v) = self.output_balances.get_mut(&k) {
-                if let Some(rune_balance) = v.get(&rune_id) {
-                    v.insert(rune_id, rune_balance + amount);
+            let balance = InputRuneBalance {
+                address: entry.address.clone(),
+                amount: entry.amount.0,
+            };
+            if let Some(v) = self.output_cache.get_mut(&k) {
+                if let Some(rune_balance) = v.get_mut(&rune_id) {
+                    rune_balance.push(balance);
                 } else {
-                    v.insert(rune_id, amount);
+                    v.insert(rune_id, vec![balance]);
                 }
             } else {
                 let mut v = HashMap::new();
-                v.insert(rune_id, amount);
-                self.output_balances.push(k, v);
+                v.insert(rune_id, vec![balance]);
+                self.output_cache.push(k, v);
             }
-            // Send to DB cache.
-            self.db_cache.ledger_entries.push(entry);
         }
     }
 }

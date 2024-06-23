@@ -1,4 +1,5 @@
 use ordinals::RuneId;
+use tokio_postgres::Row;
 
 use crate::db::types::{
     pg_bigint_u32::PgBigIntU32, pg_numeric_u128::PgNumericU128, pg_numeric_u64::PgNumericU64,
@@ -42,6 +43,20 @@ impl DbLedgerEntry {
             amount: PgNumericU128(amount),
             operation,
             timestamp: PgBigIntU32(timestamp),
+        }
+    }
+
+    pub fn from_pg_row(row: &Row) -> Self {
+        DbLedgerEntry {
+            rune_id: row.get("rune_id"),
+            block_height: row.get("block_height"),
+            tx_index: row.get("tx_index"),
+            tx_id: row.get("tx_id"),
+            output: row.get("output"),
+            address: row.get("address"),
+            amount: row.get("amount"),
+            operation: row.get("operation"),
+            timestamp: row.get("timestamp"),
         }
     }
 }

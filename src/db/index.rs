@@ -36,9 +36,9 @@ pub async fn index_block(
     block: &mut BitcoinBlockData,
     ctx: &Context,
 ) {
-    let log = ctx.expect_logger();
+    let stopwatch = std::time::Instant::now();
     let block_height = block.block_identifier.index;
-    info!(log, "Indexing block {}", block_height);
+    info!(ctx.expect_logger(), "Indexing block {}...", block_height);
     let mut db_tx = pg_client
         .transaction()
         .await
@@ -96,4 +96,5 @@ pub async fn index_block(
         .commit()
         .await
         .expect("Unable to commit pg transaction");
+    info!(ctx.expect_logger(), "Block {} indexed in {}s", block_height, stopwatch.elapsed().as_secs());
 }

@@ -1,10 +1,11 @@
 use std::{collections::HashMap, str::FromStr};
 
+use cache::transaction_cache::InputRuneBalance;
 use chainhook_sdk::utils::Context;
 use models::{db_ledger_entry::DbLedgerEntry, db_rune::DbRune};
 use ordinals::RuneId;
 use refinery::embed_migrations;
-use tokio_postgres::{types::ToSql, Client, Error, NoTls, Transaction};
+use tokio_postgres::{row, types::ToSql, Client, Error, NoTls, Transaction};
 use types::{
     pg_bigint_u32::PgBigIntU32, pg_numeric_u128::PgNumericU128, pg_numeric_u64::PgNumericU64,
 };
@@ -220,31 +221,35 @@ pub async fn pg_get_rune_by_rune_id(
     Some(DbRune::from_pg_row(row))
 }
 
-/// Returns a `HashMap` of rune balances for a list of outputs.
-pub async fn pg_get_output_rune_balances(
-    outputs: Vec<(String, u32)>,
+pub async fn pg_get_missed_input_rune_balances(
+    outputs: Vec<(u32, String, u32)>,
     db_tx: &mut Transaction<'_>,
     ctx: &Context,
-) -> Option<HashMap<RuneId, u128>> {
-    // Instead of preparing a statement and running it thousands of times.
+) -> HashMap<u32, HashMap<RuneId, Vec<InputRuneBalance>>> {
+    // Instead of preparing a statement and running it thousands of times, pull all rows with 1 query.
     let mut arg_num = 1;
     let mut args = String::new();
     let mut data = vec![];
-    for (tx_id, output) in outputs.iter() {
-        args.push_str(format!("(${},${}),", arg_num, arg_num + 1).as_str());
-        arg_num += 2;
-        data.push((tx_id, PgBigIntU32(*output)));
+    for (input_index, tx_id, output) in outputs.iter() {
+        args.push_str(format!("(${},${},${}),", arg_num, arg_num + 1, arg_num + 2).as_str());
+        arg_num += 3;
+        data.push((PgBigIntU32(*input_index), tx_id, PgBigIntU32(*output)));
     }
     args.pop();
     let mut params: Vec<&(dyn ToSql + Sync)> = vec![];
     for d in data.iter() {
-        params.push(d.0);
-        params.push(&d.1);
+        params.push(&d.0);
+        params.push(d.1);
+        params.push(&d.2);
     }
     let rows = match db_tx
         .query(
             format!(
-                "SELECT rune_id, amount FROM ledger WHERE (tx_id, output) IN ({})",
+                "WITH inputs (index, tx_id, output) AS (VALUES {})
+                SELECT i.index, l.rune_id, l.address, l.amount
+                FROM ledger AS l
+                INNER JOIN inputs AS i USING (tx_id, output)
+                WHERE l.operation = 'receive'",
                 args
             )
             .as_str(),
@@ -262,18 +267,28 @@ pub async fn pg_get_output_rune_balances(
             panic!();
         }
     };
-    if rows.len() == 0 {
-        return None;
-    };
-    let mut map = HashMap::new();
-    for row in rows {
-        let rune_id = RuneId::from_str(row.get("rune_id")).expect("unable to parse rune id");
-        let balance: PgNumericU128 = row.get("amount");
-        if let Some(entry) = map.get(&rune_id) {
-            map.insert(rune_id, *entry + balance.0);
+    let mut results: HashMap<u32, HashMap<RuneId, Vec<InputRuneBalance>>> = HashMap::new();
+    for row in rows.iter() {
+        let key: u32 = row.get("index");
+        let rune_str: String = row.get("rune_id");
+        let rune_id = RuneId::from_str(rune_str.as_str()).unwrap();
+        let address: String = row.get("address");
+        let amount: PgNumericU128 = row.get("amount");
+        let input_bal = InputRuneBalance {
+            address,
+            amount: amount.0,
+        };
+        if let Some(input) = results.get_mut(&key) {
+            if let Some(rune_bal) = input.get_mut(&rune_id) {
+                rune_bal.push(input_bal);
+            } else {
+                input.insert(rune_id, vec![input_bal]);
+            }
         } else {
-            map.insert(rune_id, balance.0);
+            let mut map = HashMap::new();
+            map.insert(rune_id, vec![input_bal]);
+            results.insert(key, map);
         }
     }
-    Some(map)
+    results
 }

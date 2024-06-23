@@ -4,7 +4,7 @@ use bytes::BytesMut;
 use tokio_postgres::types::{to_sql_checked, FromSql, IsNull, ToSql, Type};
 
 /// A value from the `ledger_operation` enum type.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum DbLedgerOperation {
     Mint,
     Burn,
