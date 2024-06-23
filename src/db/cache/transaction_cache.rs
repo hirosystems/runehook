@@ -1,7 +1,7 @@
 use std::collections::{HashMap, VecDeque};
 
 use bitcoin::{Address, Network, ScriptBuf};
-use chainhook_sdk::types::bitcoin::TxOut;
+use chainhook_sdk::{types::bitcoin::TxOut, utils::Context};
 use ordinals::{Cenotaph, Edict, Etching, Rune, RuneId, Runestone};
 
 use crate::db::{
@@ -62,17 +62,31 @@ impl TransactionCache {
     }
 
     /// Takes this transaction's input runes and moves them to the unallocated balance for future edict allocation.
-    pub fn set_input_rune_balances(&mut self, input_runes: HashMap<RuneId, VecDeque<InputRuneBalance>>) {
+    pub fn set_input_rune_balances(
+        &mut self,
+        input_runes: HashMap<RuneId, VecDeque<InputRuneBalance>>,
+    ) {
         self.input_runes = input_runes;
     }
 
     /// Takes the runestone's output pointer and keeps a record of eligible outputs to send runes to.
-    pub fn apply_runestone_pointer(&mut self, runestone: &Runestone, tx_outputs: &Vec<TxOut>) {
+    pub fn apply_runestone_pointer(
+        &mut self,
+        runestone: &Runestone,
+        tx_outputs: &Vec<TxOut>,
+        ctx: &Context,
+    ) {
         self.total_outputs = tx_outputs.len() as u32;
         // Keep a record of non-OP_RETURN outputs.
         let mut first_eligible_output: Option<u32> = None;
         for (i, output) in tx_outputs.iter().enumerate() {
-            let bytes = hex::decode(&output.script_pubkey[2..]).unwrap();
+            let Ok(bytes) = hex::decode(&output.script_pubkey[2..]) else {
+                warn!(
+                    ctx.expect_logger(),
+                    "{}: unable to decode script for output {}", self.tx_id, i
+                );
+                continue;
+            };
             let script = ScriptBuf::from_bytes(bytes);
             if !script.is_op_return() {
                 if first_eligible_output.is_none() {
@@ -113,14 +127,21 @@ impl TransactionCache {
 
     /// Moves remaining input runes to the correct output depending on runestone configuration. Must be called once the processing
     /// for a transaction is complete.
-    pub fn allocate_remaining_balances(&mut self) -> Vec<DbLedgerEntry> {
+    pub fn allocate_remaining_balances(&mut self, ctx: &Context) -> Vec<DbLedgerEntry> {
         let mut results = vec![];
-        for (rune_id, mut unallocated) in self.input_runes.iter() {
-            results.extend(self.move_rune_balance_to_output(
+        for (rune_id, unallocated) in self.input_runes.iter_mut() {
+            results.extend(move_rune_balance_to_output(
+                self.network,
+                self.block_height,
+                &self.tx_id,
+                self.tx_index,
+                self.timestamp,
                 self.pointer,
                 rune_id,
-                &mut unallocated,
+                unallocated,
+                &self.eligible_outputs,
                 0,
+                ctx,
             ));
         }
         self.input_runes.clear();
@@ -215,12 +236,14 @@ impl TransactionCache {
         // TODO: Update rune minted+burned total and number of mints+burns
     }
 
-    pub fn apply_edict(&mut self, edict: &Edict, db_rune: &DbRune) -> Vec<DbLedgerEntry> {
+    pub fn apply_edict(&mut self, edict: &Edict, ctx: &Context) -> Vec<DbLedgerEntry> {
         // Find this rune.
         let rune_id = if edict.id.block == 0 && edict.id.tx == 0 {
             let Some(etching) = self.etching.as_ref() else {
-                // Attempting to transfer a rune that was not etched.
-                // TODO: log
+                warn!(
+                    ctx.expect_logger(),
+                    "{}: attempted edict for nonexistent rune 0:0", self.tx_id
+                );
                 return vec![];
             };
             etching.rune_id()
@@ -229,8 +252,10 @@ impl TransactionCache {
         };
         // Take all the available inputs for the rune we're trying to move.
         let Some(available_inputs) = self.input_runes.get_mut(&rune_id) else {
-            // no balance to allocate?
-            // TODO: Log
+            warn!(
+                ctx.expect_logger(),
+                "{}: no unallocated runes {} remain for edict", self.tx_id, edict.id
+            );
             return vec![];
         };
         // Calculate the maximum unallocated balance we can move.
@@ -247,7 +272,6 @@ impl TransactionCache {
             output if output == self.total_outputs => {
                 let mut output_keys: Vec<u32> = self.eligible_outputs.keys().cloned().collect();
                 output_keys.sort();
-
                 if edict.amount == 0 {
                     // Divide equally. If the number of unallocated runes is not divisible by the number of non-OP_RETURN outputs,
                     // 1 additional rune is assigned to the first R non-OP_RETURN outputs, where R is the remainder after dividing
@@ -261,22 +285,36 @@ impl TransactionCache {
                             extra = 1;
                             remainder -= 1;
                         }
-                        results.extend(self.move_rune_balance_to_output(
+                        results.extend(move_rune_balance_to_output(
+                            self.network,
+                            self.block_height,
+                            &self.tx_id,
+                            self.tx_index,
+                            self.timestamp,
                             output,
                             &rune_id,
                             available_inputs,
+                            &self.eligible_outputs,
                             per_output + extra,
+                            ctx,
                         ));
                     }
                 } else {
                     // Give `amount` to all outputs or until unallocated runs out.
                     for output in output_keys {
                         let amount = edict.amount.min(unallocated);
-                        results.extend(self.move_rune_balance_to_output(
+                        results.extend(move_rune_balance_to_output(
+                            self.network,
+                            self.block_height,
+                            &self.tx_id,
+                            self.tx_index,
+                            self.timestamp,
                             output,
                             &rune_id,
                             available_inputs,
+                            &self.eligible_outputs,
                             amount,
+                            ctx,
                         ));
                     }
                 }
@@ -286,17 +324,29 @@ impl TransactionCache {
                 let mut amount = edict.amount;
                 if edict.amount == 0 {
                     amount = unallocated;
-                    // unallocated = 0;
                 }
-                results.extend(self.move_rune_balance_to_output(
+                results.extend(move_rune_balance_to_output(
+                    self.network,
+                    self.block_height,
+                    &self.tx_id,
+                    self.tx_index,
+                    self.timestamp,
                     edict.output,
                     &rune_id,
                     available_inputs,
+                    &self.eligible_outputs,
                     amount,
+                    ctx,
                 ));
             }
             _ => {
-                // TODO: what now?
+                warn!(
+                    ctx.expect_logger(),
+                    "{}: edict for rune {} attempted move to nonexistent output {}",
+                    self.tx_id,
+                    edict.id,
+                    edict.output
+                );
             }
         }
         results
@@ -311,69 +361,82 @@ impl TransactionCache {
             self.input_runes.insert(rune_id.clone(), vec);
         }
     }
+}
 
-    /// Takes `amount` rune balance from `available_inputs` and moves it to `output` by generating the correct ledger entries.
-    /// Modifies `available_inputs` to consume balance that is already moved. If `amount` is zero, all remaining balances will be
-    /// transferred.
-    fn move_rune_balance_to_output(
-        &mut self,
-        output: u32,
-        rune_id: &RuneId,
-        available_inputs: &mut VecDeque<InputRuneBalance>,
-        amount: u128,
-    ) -> Vec<DbLedgerEntry> {
-        // Take the script for the output we want so we can know the address of the new owner of this balance.
-        let mut entries = vec![];
-        let Some(script) = self.eligible_outputs.get(&output) else {
-            // TODO: log
-            return vec![];
+/// Takes `amount` rune balance from `available_inputs` and moves it to `output` by generating the correct ledger entries.
+/// Modifies `available_inputs` to consume balance that is already moved. If `amount` is zero, all remaining balances will be
+/// transferred.
+fn move_rune_balance_to_output(
+    network: Network,
+    block_height: u64,
+    tx_id: &String,
+    tx_index: u32,
+    timestamp: u32,
+    output: u32,
+    rune_id: &RuneId,
+    available_inputs: &mut VecDeque<InputRuneBalance>,
+    eligible_outputs: &HashMap<u32, ScriptBuf>,
+    amount: u128,
+    ctx: &Context,
+) -> Vec<DbLedgerEntry> {
+    // Take the script for the output we want so we can know the address of the new owner of this balance.
+    let mut entries = vec![];
+    let Some(script) = eligible_outputs.get(&output) else {
+        warn!(
+            ctx.expect_logger(),
+            "{}: attempted move to non-eligible output {}", tx_id, output
+        );
+        return vec![];
+    };
+    // Produce the `send` ledger entries by taking balance from the available inputs until the total amount is satisfied.
+    let mut total_sent = 0;
+    loop {
+        let Some(input_bal) = available_inputs.pop_front() else {
+            warn!(
+                ctx.expect_logger(),
+                "{}: move amount is not satisfied by available inputs for output {}", tx_id, output
+            );
+            break;
         };
-        // Produce the `send` ledger entries by taking balance from the available inputs until the total amount is satisfied.
-        let mut total_sent = 0;
-        loop {
-            let Some(input_bal) = available_inputs.pop_front() else {
-                // TODO: What now?
-                break;
-            };
-            let balance_taken = if amount == 0 {
-                input_bal.amount
-            } else {
-                input_bal.amount.min(amount - total_sent)
-            };
+        let balance_taken = if amount == 0 {
+            input_bal.amount
+        } else {
+            input_bal.amount.min(amount - total_sent)
+        };
+        // Empty address means it was minted or premined.
+        if input_bal.address.len() > 0 {
             entries.push(DbLedgerEntry::from_values(
                 balance_taken,
                 *rune_id,
-                self.block_height,
-                self.tx_index,
-                &self.tx_id,
+                block_height,
+                tx_index,
+                tx_id,
                 output,
                 &input_bal.address,
                 DbLedgerOperation::Send,
-                self.timestamp,
+                timestamp,
             ));
-            if balance_taken < input_bal.amount {
-                // There's still some balance left on this input, keep it for later.
-                available_inputs.push_front(InputRuneBalance {
-                    address: input_bal.address,
-                    amount: input_bal.amount - balance_taken,
-                });
-                break;
-            }
-            total_sent += balance_taken;
         }
-        entries.push(DbLedgerEntry::from_values(
-            total_sent,
-            *rune_id,
-            self.block_height,
-            self.tx_index,
-            &self.tx_id,
-            output,
-            &Address::from_script(script, self.network)
-                .unwrap()
-                .to_string(),
-            DbLedgerOperation::Receive,
-            self.timestamp,
-        ));
-        entries
+        if balance_taken < input_bal.amount {
+            // There's still some balance left on this input, keep it for later.
+            available_inputs.push_front(InputRuneBalance {
+                address: input_bal.address,
+                amount: input_bal.amount - balance_taken,
+            });
+            break;
+        }
+        total_sent += balance_taken;
     }
+    entries.push(DbLedgerEntry::from_values(
+        total_sent,
+        *rune_id,
+        block_height,
+        tx_index,
+        &tx_id,
+        output,
+        &Address::from_script(script, network).unwrap().to_string(),
+        DbLedgerOperation::Receive,
+        timestamp,
+    ));
+    entries
 }

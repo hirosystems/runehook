@@ -231,7 +231,7 @@ pub async fn pg_get_missed_input_rune_balances(
     let mut args = String::new();
     let mut data = vec![];
     for (input_index, tx_id, output) in outputs.iter() {
-        args.push_str(format!("(${},${},${}),", arg_num, arg_num + 1, arg_num + 2).as_str());
+        args.push_str(format!("(${}::bigint,${},${}::bigint),", arg_num, arg_num + 1, arg_num + 2).as_str());
         arg_num += 3;
         data.push((PgBigIntU32(*input_index), tx_id, PgBigIntU32(*output)));
     }
@@ -269,7 +269,7 @@ pub async fn pg_get_missed_input_rune_balances(
     };
     let mut results: HashMap<u32, HashMap<RuneId, Vec<InputRuneBalance>>> = HashMap::new();
     for row in rows.iter() {
-        let key: u32 = row.get("index");
+        let key: PgBigIntU32 = row.get("index");
         let rune_str: String = row.get("rune_id");
         let rune_id = RuneId::from_str(rune_str.as_str()).unwrap();
         let address: String = row.get("address");
@@ -278,7 +278,7 @@ pub async fn pg_get_missed_input_rune_balances(
             address,
             amount: amount.0,
         };
-        if let Some(input) = results.get_mut(&key) {
+        if let Some(input) = results.get_mut(&key.0) {
             if let Some(rune_bal) = input.get_mut(&rune_id) {
                 rune_bal.push(input_bal);
             } else {
@@ -287,7 +287,7 @@ pub async fn pg_get_missed_input_rune_balances(
         } else {
             let mut map = HashMap::new();
             map.insert(rune_id, vec![input_bal]);
-            results.insert(key, map);
+            results.insert(key.0, map);
         }
     }
     results

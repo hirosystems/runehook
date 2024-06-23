@@ -68,7 +68,7 @@ impl IndexCache {
 
     /// Finalizes the current transaction index cache.
     pub fn end_transaction(&mut self, _db_tx: &mut Transaction<'_>, ctx: &Context) {
-        let entries = self.tx_cache.allocate_remaining_balances();
+        let entries = self.tx_cache.allocate_remaining_balances(ctx);
         for entry in entries.iter() {
             info!(
                 ctx.expect_logger(),
@@ -97,7 +97,7 @@ impl IndexCache {
             self.tx_cache.block_height
         );
         self.scan_tx_input_rune_balance(tx_inputs, db_tx, ctx).await;
-        self.tx_cache.apply_runestone_pointer(runestone, tx_outputs);
+        self.tx_cache.apply_runestone_pointer(runestone, tx_outputs, ctx);
     }
 
     pub async fn apply_cenotaph(
@@ -204,7 +204,7 @@ impl IndexCache {
             // rune should exist?
             return;
         };
-        let entries = self.tx_cache.apply_edict(edict, &db_rune);
+        let entries = self.tx_cache.apply_edict(edict, ctx);
         for entry in entries.iter() {
             info!(
                 ctx.expect_logger(),
