@@ -25,7 +25,7 @@ pub async fn start_service(config: &Config, ctx: &Context) -> Result<(), String>
     let mut index_cache = new_index_cache(config, &mut pg_client, ctx).await;
     let chain_tip = pg_get_block_height(&mut pg_client, ctx)
         .await
-        .unwrap_or(get_rune_genesis_block_height(config.get_bitcoin_network()));
+        .unwrap_or(get_rune_genesis_block_height(config.get_bitcoin_network()) - 1);
     loop {
         let bitcoind_chain_tip = bitcoind_get_block_height(config, ctx);
         if bitcoind_chain_tip < chain_tip {
@@ -37,7 +37,12 @@ pub async fn start_service(config: &Config, ctx: &Context) -> Result<(), String>
             );
             std::thread::sleep(std::time::Duration::from_secs(10));
         } else if bitcoind_chain_tip > chain_tip {
-            // Scan until we get to chain tip
+            info!(
+                ctx.expect_logger(),
+                "Scanning on block range {} to {}",
+                chain_tip,
+                bitcoind_chain_tip
+            );
             scan_blocks(
                 ((chain_tip + 1)..bitcoind_chain_tip).collect(),
                 config,

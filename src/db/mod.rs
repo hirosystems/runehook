@@ -190,8 +190,12 @@ pub async fn pg_get_block_height(client: &mut Client, _ctx: &Context) -> Option<
         .query_opt("SELECT MAX(block_height) AS max FROM runes WHERE id <> '1:0'", &[])
         .await
         .expect("error getting max block height")?;
-    let max: PgNumericU64 = row.get("max");
-    Some(max.0)
+    let max: Option<PgNumericU64> = row.get("max");
+    if let Some(max) = max {
+        Some(max.0)
+    } else {
+        None
+    }
 }
 
 pub async fn pg_get_rune_by_rune_id(

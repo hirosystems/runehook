@@ -457,7 +457,7 @@ fn move_rune_balance_to_output(
         }
     }
     // Add the "receive" entry, if applicable.
-    if receiver_address.is_some() {
+    if receiver_address.is_some() && total_sent > 0 {
         results.push(DbLedgerEntry::from_values(
             total_sent,
             *rune_id,

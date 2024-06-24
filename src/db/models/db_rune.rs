@@ -84,7 +84,7 @@ impl DbRune {
                 .unwrap_or(PgNumericU128(0)),
             symbol: etching
                 .symbol
-                .map(|i| i.to_string())
+                .map(|i| i.to_string().replace('\0', ""))
                 .unwrap_or("¤".to_string()),
             terms_amount,
             terms_cap,
