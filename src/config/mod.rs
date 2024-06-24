@@ -48,10 +48,16 @@ impl Config {
         let config = Config {
             event_observer,
             postgres: PostgresConfig {
-                database: config_file.postgres.database.unwrap_or("postgres".to_string()),
+                database: config_file
+                    .postgres
+                    .database
+                    .unwrap_or("postgres".to_string()),
                 host: config_file.postgres.host.unwrap_or("localhost".to_string()),
                 port: config_file.postgres.port.unwrap_or(5432),
-                username: config_file.postgres.username.unwrap_or("postgres".to_string()),
+                username: config_file
+                    .postgres
+                    .username
+                    .unwrap_or("postgres".to_string()),
                 password: config_file.postgres.password,
             },
         };

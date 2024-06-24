@@ -97,7 +97,8 @@ impl IndexCache {
             self.tx_cache.block_height
         );
         self.scan_tx_input_rune_balance(tx_inputs, db_tx, ctx).await;
-        self.tx_cache.apply_runestone_pointer(runestone, tx_outputs, ctx);
+        self.tx_cache
+            .apply_runestone_pointer(runestone, tx_outputs, ctx);
     }
 
     pub async fn apply_cenotaph(
@@ -285,7 +286,9 @@ impl IndexCache {
         self.tx_cache.set_input_rune_balances(final_input_runes);
     }
 
+    /// Take ledger entries returned by the `TransactionCache` and add them to the `DbCache`.
     fn add_ledger_entries_to_db_cache(&mut self, entries: &Vec<DbLedgerEntry>) {
+        // Add to DB cache.
         self.db_cache.ledger_entries.extend(entries.clone());
         // Add to output LRU cache if it's received balance.
         for entry in entries.iter() {

@@ -232,7 +232,15 @@ pub async fn pg_get_missed_input_rune_balances(
     let mut args = String::new();
     let mut data = vec![];
     for (input_index, tx_id, output) in outputs.iter() {
-        args.push_str(format!("(${}::bigint,${},${}::bigint),", arg_num, arg_num + 1, arg_num + 2).as_str());
+        args.push_str(
+            format!(
+                "(${}::bigint,${},${}::bigint),",
+                arg_num,
+                arg_num + 1,
+                arg_num + 2
+            )
+            .as_str(),
+        );
         arg_num += 3;
         data.push((PgBigIntU32(*input_index), tx_id, PgBigIntU32(*output)));
     }

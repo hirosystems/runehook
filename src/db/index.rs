@@ -116,5 +116,10 @@ pub async fn index_block(
         .commit()
         .await
         .expect("Unable to commit pg transaction");
-    info!(ctx.expect_logger(), "Block {} indexed in {}s", block_height, stopwatch.elapsed().as_secs());
+    info!(
+        ctx.expect_logger(),
+        "Block {} indexed in {}s",
+        block_height,
+        stopwatch.elapsed().as_secs()
+    );
 }

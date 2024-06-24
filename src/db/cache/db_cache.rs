@@ -2,8 +2,8 @@ use chainhook_sdk::utils::Context;
 use tokio_postgres::Transaction;
 
 use crate::db::{
-    pg_insert_ledger_entries, pg_insert_rune_rows,
     models::{db_ledger_entry::DbLedgerEntry, db_rune::DbRune},
+    pg_insert_ledger_entries, pg_insert_rune_rows,
 };
 
 /// Holds rows that have yet to be inserted into the database.

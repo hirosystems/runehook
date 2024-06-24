@@ -394,7 +394,7 @@ fn move_rune_balance_to_output(
             Err(e) => {
                 warn!(
                     ctx.expect_logger(),
-                    "{}: unable to decode address for output {}", tx_id, output
+                    "{}: unable to decode address for output {}, {}", tx_id, output, e
                 );
                 None
             }
@@ -456,17 +456,20 @@ fn move_rune_balance_to_output(
             break;
         }
     }
-    results.push(DbLedgerEntry::from_values(
-        total_sent,
-        *rune_id,
-        block_height,
-        tx_index,
-        &tx_id,
-        output,
-        receiver_address.as_ref(),
-        None,
-        DbLedgerOperation::Receive,
-        timestamp,
-    ));
+    // Add the "receive" entry, if applicable.
+    if receiver_address.is_some() {
+        results.push(DbLedgerEntry::from_values(
+            total_sent,
+            *rune_id,
+            block_height,
+            tx_index,
+            &tx_id,
+            output,
+            receiver_address.as_ref(),
+            None,
+            DbLedgerOperation::Receive,
+            timestamp,
+        ));
+    }
     results
 }
