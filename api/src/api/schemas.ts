@@ -35,6 +35,21 @@ const Nullable = <T extends TSchema>(type: T) => Type.Union([type, Type.Null()])
 // Parameters
 // ==========================
 
+export const OffsetParamSchema = Type.Integer({
+  minimum: 0,
+  title: 'Offset',
+  description: 'Result offset',
+});
+export type OffsetParam = Static<typeof OffsetParamSchema>;
+
+export const LimitParamSchema = Type.Integer({
+  minimum: 1,
+  maximum: 60,
+  title: 'Limit',
+  description: 'Results per page',
+});
+export type LimitParam = Static<typeof LimitParamSchema>;
+
 export const RuneIdSchema = Type.RegEx(/^[0-9]+:[0-9]+$/);
 export const RuneIdSchemaCType = TypeCompiler.Compile(RuneIdSchema);
 export const RuneNameSchema = Type.RegEx(/^[A-Z]+$/);
@@ -88,6 +103,7 @@ export const EtchingResponseSchema = Type.Object({
   total_burns: Type.Integer({ examples: [17] }),
   timestamp: Type.Integer({ examples: [1713571767] }),
 });
+export type EtchingResponse = Static<typeof EtchingResponseSchema>;
 
 export const NotFoundResponse = Type.Object(
   {

@@ -1,3 +1,10 @@
+export type DbPaginatedResult<T> = {
+  total: number;
+  results: T[];
+};
+
+export type DbCountedResult<T> = T & { total: number };
+
 export type DbRune = {
   id: string;
   number: number;

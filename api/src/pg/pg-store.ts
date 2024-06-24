@@ -5,8 +5,14 @@ import {
   connectPostgres,
 } from '@hirosystems/api-toolkit';
 import { ENV } from '../env';
-import { DbRune } from './types';
-import { EtchingParam, RuneNameSchemaCType, RuneSpacedNameSchemaCType } from '../api/schemas';
+import { DbCountedResult, DbPaginatedResult, DbRune } from './types';
+import {
+  EtchingParam,
+  LimitParam,
+  OffsetParam,
+  RuneNameSchemaCType,
+  RuneSpacedNameSchemaCType,
+} from '../api/schemas';
 
 export class PgStore extends BasePgStore {
   static async connect(): Promise<PgStore> {
@@ -46,5 +52,19 @@ export class PgStore extends BasePgStore {
     `;
     if (result.count == 0) return undefined;
     return result[0];
+  }
+
+  async getEtchings(offset: OffsetParam, limit: LimitParam): Promise<DbPaginatedResult<DbRune>> {
+    const results = await this.sql<DbCountedResult<DbRune>[]>`
+      WITH rune_count AS (SELECT COALESCE(MAX(number), 0) + 1 AS total FROM runes)
+      SELECT *, (SELECT total FROM rune_count)
+      FROM runes
+      ORDER BY block_height DESC, tx_index DESC
+      OFFSET ${offset} LIMIT ${limit}
+    `;
+    return {
+      total: results[0]?.total ?? 0,
+      results,
+    };
   }
 }
