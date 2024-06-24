@@ -4,6 +4,8 @@ import { Value } from '@sinclair/typebox/value';
 import { FastifyPluginCallback } from 'fastify';
 import { Server } from 'http';
 import {
+  EtchingActivityResponse,
+  EtchingActivityResponseSchema,
   EtchingParamSchema,
   EtchingResponse,
   EtchingResponseSchema,
@@ -12,7 +14,7 @@ import {
   OffsetParamSchema,
   PaginatedResponse,
 } from '../schemas';
-import { DbRune } from '../../pg/types';
+import { DbLedgerEntryWithRune, DbRune } from '../../pg/types';
 
 function parseEtchingResponse(rune: DbRune): EtchingResponse {
   return {
@@ -40,6 +42,26 @@ function parseEtchingResponse(rune: DbRune): EtchingResponse {
     burned: rune.burned,
     total_burns: rune.total_burns,
     timestamp: rune.timestamp,
+  };
+}
+
+function parseEtchingActivityResponse(entry: DbLedgerEntryWithRune): EtchingActivityResponse {
+  return {
+    rune: {
+      id: entry.rune_id,
+      name: entry.name,
+      spaced_name: entry.spaced_name,
+    },
+    block_height: entry.block_height,
+    tx_index: entry.tx_index,
+    tx_id: entry.tx_id,
+    vout: entry.output,
+    output: `${entry.tx_id}:${entry.output}`,
+    operation: entry.operation,
+    address: entry.address ?? undefined,
+    receiver_address: entry.receiver_address ?? undefined,
+    timestamp: entry.timestamp,
+    amount: entry.amount,
   };
 }
 
@@ -104,6 +126,39 @@ export const EtchingRoutes: FastifyPluginCallback<
       } else {
         await reply.send(parseEtchingResponse(rune));
       }
+    }
+  );
+
+  fastify.get(
+    '/etchings/:etching/activity',
+    {
+      schema: {
+        operationId: 'getEtchingActivity',
+        summary: 'Rune etching activity',
+        description: 'Retrieves all activity for a Rune',
+        tags: ['Runes'],
+        params: Type.Object({
+          etching: EtchingParamSchema,
+        }),
+        querystring: Type.Object({
+          offset: Type.Optional(OffsetParamSchema),
+          limit: Type.Optional(LimitParamSchema),
+        }),
+        response: {
+          200: PaginatedResponse(EtchingActivityResponseSchema, 'Paginated etchings response'),
+        },
+      },
+    },
+    async (request, reply) => {
+      const offset = request.query.offset ?? 0;
+      const limit = request.query.limit ?? 20;
+      const results = await fastify.db.getEtchingActivity(request.params.etching, offset, limit);
+      await reply.send({
+        limit,
+        offset,
+        total: results.total,
+        results: results.results.map(r => parseEtchingActivityResponse(r)),
+      });
     }
   );
 

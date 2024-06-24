@@ -105,6 +105,36 @@ export const EtchingResponseSchema = Type.Object({
 });
 export type EtchingResponse = Static<typeof EtchingResponseSchema>;
 
+export const EtchingActivityResponseSchema = Type.Object({
+  rune: Type.Object({
+    id: Type.String({ examples: ['840000:1'] }),
+    name: Type.String({ examples: ['ZZZZZFEHUZZZZZ'] }),
+    spaced_name: Type.String({ examples: ['Z•Z•Z•Z•Z•FEHU•Z•Z•Z•Z•Z'] }),
+  }),
+  block_height: Type.Integer({ examples: [840000] }),
+  tx_index: Type.Integer({ examples: [1] }),
+  tx_id: Type.String({
+    examples: ['2bb85f4b004be6da54f766c17c1e855187327112c231ef2ff35ebad0ea67c69e'],
+  }),
+  vout: Type.Integer({ examples: [100] }),
+  output: Type.String({
+    examples: ['2bb85f4b004be6da54f766c17c1e855187327112c231ef2ff35ebad0ea67c69e:100'],
+  }),
+  address: Type.Optional(Type.String({ examples: ['bc1q7jd477wc5s88hsvenr0ddtatsw282hfjzg59wz'] })),
+  receiver_address: Type.Optional(
+    Type.String({ examples: ['bc1pgdrveee2v4ez95szaakw5gkd8eennv2dddf9rjdrlt6ch56lzrrsxgvazt'] })
+  ),
+  amount: Type.String({ examples: ['11000000000'] }),
+  operation: Type.Union([
+    Type.Literal('mint'),
+    Type.Literal('burn'),
+    Type.Literal('send'),
+    Type.Literal('receive'),
+  ]),
+  timestamp: Type.Integer({ examples: [1713571767] }),
+});
+export type EtchingActivityResponse = Static<typeof EtchingActivityResponseSchema>;
+
 export const NotFoundResponse = Type.Object(
   {
     error: Type.Literal('Not found'),

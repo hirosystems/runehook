@@ -3,7 +3,7 @@ export type DbPaginatedResult<T> = {
   results: T[];
 };
 
-export type DbCountedResult<T> = T & { total: number };
+export type DbCountedQueryResult<T> = T & { total: number };
 
 export type DbRune = {
   id: string;
@@ -28,4 +28,24 @@ export type DbRune = {
   burned: string;
   total_burns: number;
   timestamp: number;
+};
+
+export type DbLedgerOperation = 'mint' | 'burn' | 'send' | 'receive';
+
+export type DbLedgerEntry = {
+  rune_id: string;
+  block_height: number;
+  tx_index: number;
+  tx_id: string;
+  output: number;
+  address: string | null;
+  receiver_address: string | null;
+  amount: string;
+  operation: DbLedgerOperation;
+  timestamp: number;
+};
+
+export type DbLedgerEntryWithRune = DbLedgerEntry & {
+  name: string;
+  spaced_name: string;
 };
