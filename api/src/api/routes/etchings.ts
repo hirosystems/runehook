@@ -4,66 +4,15 @@ import { Value } from '@sinclair/typebox/value';
 import { FastifyPluginCallback } from 'fastify';
 import { Server } from 'http';
 import {
-  EtchingActivityResponse,
   EtchingActivityResponseSchema,
   EtchingParamSchema,
-  EtchingResponse,
   EtchingResponseSchema,
   LimitParamSchema,
   NotFoundResponse,
   OffsetParamSchema,
   PaginatedResponse,
 } from '../schemas';
-import { DbLedgerEntryWithRune, DbRune } from '../../pg/types';
-
-function parseEtchingResponse(rune: DbRune): EtchingResponse {
-  return {
-    id: rune.id,
-    number: rune.number,
-    name: rune.name,
-    spaced_name: rune.spaced_name,
-    block_height: rune.block_height,
-    tx_index: rune.tx_index,
-    tx_id: rune.tx_id,
-    divisibility: rune.divisibility,
-    premine: rune.premine,
-    symbol: rune.symbol,
-    mint_terms: {
-      amount: rune.terms_amount,
-      cap: rune.terms_cap,
-      height_start: rune.terms_height_start,
-      height_end: rune.terms_height_end,
-      offset_start: rune.terms_offset_start,
-      offset_end: rune.terms_offset_end,
-    },
-    turbo: rune.turbo,
-    minted: rune.minted,
-    total_mints: rune.total_mints,
-    burned: rune.burned,
-    total_burns: rune.total_burns,
-    timestamp: rune.timestamp,
-  };
-}
-
-function parseEtchingActivityResponse(entry: DbLedgerEntryWithRune): EtchingActivityResponse {
-  return {
-    rune: {
-      id: entry.rune_id,
-      name: entry.name,
-      spaced_name: entry.spaced_name,
-    },
-    block_height: entry.block_height,
-    tx_index: entry.tx_index,
-    tx_id: entry.tx_id,
-    vout: entry.output,
-    output: `${entry.tx_id}:${entry.output}`,
-    operation: entry.operation,
-    address: entry.address ?? undefined,
-    receiver_address: entry.receiver_address ?? undefined,
-    timestamp: entry.timestamp,
-    amount: entry.amount,
-  };
-}
+import { parseEtchingActivityResponse, parseEtchingResponse } from '../util/helpers';
 
 export const EtchingRoutes: FastifyPluginCallback<
   Record<never, never>,

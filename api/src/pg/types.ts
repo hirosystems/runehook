@@ -48,4 +48,5 @@ export type DbLedgerEntry = {
 export type DbLedgerEntryWithRune = DbLedgerEntry & {
   name: string;
   spaced_name: string;
+  divisibility: number;
 };

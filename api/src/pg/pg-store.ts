@@ -80,7 +80,7 @@ export class PgStore extends BasePgStore {
     limit: LimitParam
   ): Promise<DbPaginatedResult<DbLedgerEntryWithRune>> {
     const results = await this.sql<DbCountedQueryResult<DbLedgerEntryWithRune>[]>`
-      SELECT l.*, r.name, r.spaced_name, COUNT(*) OVER() AS total
+      SELECT l.*, r.name, r.spaced_name, r.divisibility, COUNT(*) OVER() AS total
       FROM ledger AS l
       INNER JOIN runes AS r ON r.id = l.rune_id
       WHERE ${getEtchingIdWhereCondition(this.sql, id)}
