@@ -6,7 +6,8 @@ CREATE TABLE IF NOT EXISTS ledger (
     tx_index                BIGINT NOT NULL,
     tx_id                   TEXT NOT NULL,
     output                  BIGINT NOT NULL,
-    address                 TEXT NOT NULL,
+    address                 TEXT,
+    receiver_address        TEXT,
     amount                  NUMERIC NOT NULL,
     operation               ledger_operation NOT NULL,
     timestamp               BIGINT NOT NULL

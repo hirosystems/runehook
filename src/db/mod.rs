@@ -5,7 +5,7 @@ use chainhook_sdk::utils::Context;
 use models::{db_ledger_entry::DbLedgerEntry, db_rune::DbRune};
 use ordinals::RuneId;
 use refinery::embed_migrations;
-use tokio_postgres::{row, types::ToSql, Client, Error, NoTls, Transaction};
+use tokio_postgres::{types::ToSql, Client, Error, NoTls, Transaction};
 use types::{
     pg_bigint_u32::PgBigIntU32, pg_numeric_u128::PgNumericU128, pg_numeric_u64::PgNumericU64,
 };
@@ -136,8 +136,8 @@ pub async fn pg_insert_ledger_entries(
     let stmt = db_tx
         .prepare(
             "INSERT INTO ledger
-        (rune_id, block_height, tx_index, tx_id, output, address, amount, operation, timestamp)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+        (rune_id, block_height, tx_index, tx_id, output, address, receiver_address, amount, operation, timestamp)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
         )
         .await
         .expect("Unable to prepare statement");
@@ -152,6 +152,7 @@ pub async fn pg_insert_ledger_entries(
                     &row.tx_id,
                     &row.output,
                     &row.address,
+                    &row.receiver_address,
                     &row.amount,
                     &row.operation,
                     &row.timestamp,
@@ -272,7 +273,7 @@ pub async fn pg_get_missed_input_rune_balances(
         let key: PgBigIntU32 = row.get("index");
         let rune_str: String = row.get("rune_id");
         let rune_id = RuneId::from_str(rune_str.as_str()).unwrap();
-        let address: String = row.get("address");
+        let address: Option<String> = row.get("address");
         let amount: PgNumericU128 = row.get("amount");
         let input_bal = InputRuneBalance {
             address,

@@ -13,8 +13,8 @@ use crate::db::{
 
 #[derive(Debug, Clone)]
 pub struct InputRuneBalance {
-    /// Previous owner of this balance.
-    pub address: String,
+    /// Previous owner of this balance. If this is `None`, it means the balance was just minted or premined.
+    pub address: Option<String>,
     /// How much balance was input to this transaction.
     pub amount: u128,
 }
@@ -96,7 +96,10 @@ impl TransactionCache {
             }
         }
         if first_eligible_output.is_none() {
-            todo!("burn");
+            warn!(
+                ctx.expect_logger(),
+                "{}: no eligible non-OP_RETURN output found", self.tx_id
+            );
         } else {
             self.pointer = runestone.pointer.unwrap_or(first_eligible_output.unwrap());
         }
@@ -115,7 +118,8 @@ impl TransactionCache {
                     &self.tx_id,
                     // TODO: Should this be NULL if we're burning?
                     self.pointer,
-                    &balance.address,
+                    balance.address.as_ref(),
+                    None,
                     DbLedgerOperation::Burn,
                     self.timestamp,
                 ));
@@ -167,7 +171,7 @@ impl TransactionCache {
             self.add_input_runes(
                 &rune_id,
                 InputRuneBalance {
-                    address: "".to_string(),
+                    address: None,
                     amount: premine,
                 },
             );
@@ -200,7 +204,7 @@ impl TransactionCache {
         self.add_input_runes(
             rune_id,
             InputRuneBalance {
-                address: "".to_string(),
+                address: None,
                 amount: mint_amount.0,
             },
         );
@@ -211,7 +215,8 @@ impl TransactionCache {
             self.tx_index,
             &self.tx_id,
             self.pointer,
-            &"".to_string(),
+            None,
+            None,
             DbLedgerOperation::Mint,
             self.timestamp,
         )
@@ -229,7 +234,8 @@ impl TransactionCache {
             &self.tx_id,
             // TODO: Should this be NULL if we're burning?
             self.pointer,
-            &"".to_string(),
+            None,
+            None,
             DbLedgerOperation::Burn,
             self.timestamp,
         )
@@ -347,6 +353,7 @@ impl TransactionCache {
                     edict.id,
                     edict.output
                 );
+                // TODO: Burn
             }
         }
         results
@@ -379,14 +386,31 @@ fn move_rune_balance_to_output(
     amount: u128,
     ctx: &Context,
 ) -> Vec<DbLedgerEntry> {
-    // Take the script for the output we want so we can know the address of the new owner of this balance.
-    let mut entries = vec![];
-    let Some(script) = eligible_outputs.get(&output) else {
-        warn!(
-            ctx.expect_logger(),
-            "{}: attempted move to non-eligible output {}", tx_id, output
-        );
-        return vec![];
+    let mut results = vec![];
+    // Who is this balance going to?
+    let receiver_address = match eligible_outputs.get(&output) {
+        Some(script) => match Address::from_script(script, network) {
+            Ok(address) => Some(address.to_string()),
+            Err(e) => {
+                warn!(
+                    ctx.expect_logger(),
+                    "{}: unable to decode address for output {}", tx_id, output
+                );
+                None
+            }
+        },
+        None => {
+            warn!(
+                ctx.expect_logger(),
+                "{}: attempted move to non-eligible output {}", tx_id, output
+            );
+            None
+        }
+    };
+    let operation = if receiver_address.is_some() {
+        DbLedgerOperation::Send
+    } else {
+        DbLedgerOperation::Burn
     };
     // Produce the `send` ledger entries by taking balance from the available inputs until the total amount is satisfied.
     let mut total_sent = 0;
@@ -403,17 +427,19 @@ fn move_rune_balance_to_output(
         } else {
             input_bal.amount.min(amount - total_sent)
         };
-        // Empty address means it was minted or premined.
-        if input_bal.address.len() > 0 {
-            entries.push(DbLedgerEntry::from_values(
+        // Empty sender address means this balance was minted or premined, so we have no "send" entry to add.
+        if let Some(sender_address) = input_bal.address.clone() {
+            results.push(DbLedgerEntry::from_values(
                 balance_taken,
                 *rune_id,
                 block_height,
                 tx_index,
                 tx_id,
                 output,
-                &input_bal.address,
-                DbLedgerOperation::Send,
+                Some(&sender_address),
+                // Depending on the logic above, this might be a normal "send" or a "burn" if the target output was not found.
+                receiver_address.as_ref(),
+                operation.clone(),
                 timestamp,
             ));
         }
@@ -426,17 +452,21 @@ fn move_rune_balance_to_output(
             break;
         }
         total_sent += balance_taken;
+        if total_sent == amount {
+            break;
+        }
     }
-    entries.push(DbLedgerEntry::from_values(
+    results.push(DbLedgerEntry::from_values(
         total_sent,
         *rune_id,
         block_height,
         tx_index,
         &tx_id,
         output,
-        &Address::from_script(script, network).unwrap().to_string(),
+        receiver_address.as_ref(),
+        None,
         DbLedgerOperation::Receive,
         timestamp,
     ));
-    entries
+    results
 }
