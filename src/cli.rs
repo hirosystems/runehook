@@ -153,7 +153,7 @@ async fn handle_command(opts: Opts, ctx: Context) -> Result<(), String> {
             let config = Config::from_file_path(&cmd.config_path)?;
             let blocks = cmd.get_blocks();
             let mut pg_client = pg_connect(&config, true, &ctx).await;
-            let mut index_cache = new_index_cache(&mut pg_client, &ctx).await;
+            let mut index_cache = new_index_cache(&config, &mut pg_client, &ctx).await;
             scan_blocks(blocks, &config, &mut pg_client, &mut index_cache, &ctx).await?;
         }
     }

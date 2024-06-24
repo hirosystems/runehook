@@ -187,7 +187,7 @@ pub async fn pg_get_max_rune_number(client: &mut Client, _ctx: &Context) -> u32 
 
 pub async fn pg_get_block_height(client: &mut Client, _ctx: &Context) -> Option<u64> {
     let row = client
-        .query_opt("SELECT MAX(block_height) AS max FROM runes", &[])
+        .query_opt("SELECT MAX(block_height) AS max FROM runes WHERE id <> '1:0'", &[])
         .await
         .expect("error getting max block height")?;
     let max: PgNumericU64 = row.get("max");

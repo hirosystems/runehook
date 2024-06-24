@@ -6,6 +6,7 @@ use super::Config;
 pub struct ConfigFile {
     pub network: Option<EventObserverConfigOverrides>,
     pub postgres: PostgresConfigFile,
+    pub resources: ResourcesConfigFile,
 }
 
 impl ConfigFile {
@@ -50,29 +51,7 @@ pub struct PredicatesApiConfigFile {
     pub disabled: Option<bool>,
 }
 
-// #[derive(Deserialize, Debug, Clone)]
-// pub struct SnapshotConfigFile {
-//     pub download_url: Option<String>,
-// }
-
-// #[derive(Deserialize, Debug, Clone)]
-// pub struct ResourcesConfigFile {
-//     pub ulimit: Option<usize>,
-//     pub cpu_core_available: Option<usize>,
-//     pub memory_available: Option<usize>,
-//     pub bitcoind_rpc_threads: Option<usize>,
-//     pub bitcoind_rpc_timeout: Option<u32>,
-//     pub expected_observers_count: Option<usize>,
-//     pub brc20_lru_cache_size: Option<usize>,
-// }
-
-// #[derive(Deserialize, Debug, Clone)]
-// pub struct NetworkConfigFile {
-//     pub mode: String,
-//     pub bitcoind_rpc_url: String,
-//     pub bitcoind_rpc_username: String,
-//     pub bitcoind_rpc_password: String,
-//     pub bitcoind_zmq_url: Option<String>,
-//     pub stacks_node_rpc_url: Option<String>,
-//     pub stacks_events_ingestion_port: Option<u16>,
-// }
+#[derive(Deserialize, Debug, Clone)]
+pub struct ResourcesConfigFile {
+    pub lru_cache_size: Option<usize>,
+}

@@ -2,6 +2,7 @@ use std::str::FromStr;
 
 use bitcoin::absolute::LockTime;
 use bitcoin::transaction::TxOut;
+use bitcoin::Network;
 use bitcoin::OutPoint;
 use bitcoin::ScriptBuf;
 use bitcoin::Sequence;
@@ -16,6 +17,16 @@ use ordinals::Runestone;
 use tokio_postgres::Client;
 
 use super::cache::index_cache::IndexCache;
+
+pub fn get_rune_genesis_block_height(network: Network) -> u64 {
+    match network {
+        Network::Bitcoin => 840_000,
+        Network::Testnet => todo!(),
+        Network::Signet => todo!(),
+        Network::Regtest => todo!(),
+        _ => todo!(),
+    }
+}
 
 fn bitcoin_tx_from_chainhook_tx(
     block: &BitcoinBlockData,
@@ -120,6 +131,6 @@ pub async fn index_block(
         ctx.expect_logger(),
         "Block {} indexed in {}s",
         block_height,
-        stopwatch.elapsed().as_secs()
+        stopwatch.elapsed().as_millis() / 1000
     );
 }

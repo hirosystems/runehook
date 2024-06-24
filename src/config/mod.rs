@@ -1,8 +1,10 @@
 pub mod file;
 pub mod generator;
 
+use bitcoin::Network;
 use chainhook_sdk::observer::EventObserverConfig;
 
+use chainhook_sdk::types::BitcoinNetwork;
 use file::ConfigFile;
 use std::fs::File;
 use std::io::{BufReader, Read};
@@ -17,9 +19,15 @@ pub struct PostgresConfig {
 }
 
 #[derive(Clone, Debug)]
+pub struct ResourcesConfig {
+    pub lru_cache_size: usize,
+}
+
+#[derive(Clone, Debug)]
 pub struct Config {
     pub event_observer: EventObserverConfig,
     pub postgres: PostgresConfig,
+    pub resources: ResourcesConfig,
 }
 
 impl Config {
@@ -60,7 +68,17 @@ impl Config {
                     .unwrap_or("postgres".to_string()),
                 password: config_file.postgres.password,
             },
+            resources: ResourcesConfig { lru_cache_size: config_file.resources.lru_cache_size.unwrap_or(10_000) }
         };
         Ok(config)
+    }
+
+    pub fn get_bitcoin_network(&self) -> Network {
+        match self.event_observer.bitcoin_network {
+            BitcoinNetwork::Mainnet => Network::Bitcoin,
+            BitcoinNetwork::Regtest => Network::Regtest,
+            BitcoinNetwork::Testnet => Network::Testnet,
+            BitcoinNetwork::Signet => Network::Signet,
+        }
     }
 }

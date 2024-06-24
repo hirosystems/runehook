@@ -3,7 +3,7 @@ use std::sync::mpsc::channel;
 use crate::bitcoind::bitcoind_get_block_height;
 use crate::config::Config;
 use crate::db::cache::new_index_cache;
-use crate::db::index::index_block;
+use crate::db::index::{get_rune_genesis_block_height, index_block};
 use crate::db::{pg_connect, pg_get_block_height};
 use crate::scan::bitcoin::scan_blocks;
 use chainhook_sdk::observer::BitcoinBlockDataCached;
@@ -22,10 +22,10 @@ pub async fn start_service(config: &Config, ctx: &Context) -> Result<(), String>
     let (observer_event_tx, observer_event_rx) = crossbeam_channel::unbounded();
     let observer_sidecar = set_up_observer_sidecar_runloop(config, ctx)?;
 
-    let mut index_cache = new_index_cache(&mut pg_client, ctx).await;
+    let mut index_cache = new_index_cache(config, &mut pg_client, ctx).await;
     let chain_tip = pg_get_block_height(&mut pg_client, ctx)
         .await
-        .unwrap_or(840_000);
+        .unwrap_or(get_rune_genesis_block_height(config.get_bitcoin_network()));
     loop {
         let bitcoind_chain_tip = bitcoind_get_block_height(config, ctx);
         if bitcoind_chain_tip < chain_tip {
