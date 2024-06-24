@@ -34,3 +34,36 @@ impl<'a> FromSql<'a> for PgSmallIntU8 {
         ty.name() == "int2" || ty.name() == "smallint"
     }
 }
+
+#[cfg(test)]
+mod test {
+    use test_case::test_case;
+    use tokio_postgres::NoTls;
+
+    use super::PgSmallIntU8;
+
+    #[test_case(255; "u8 max")]
+    #[test_case(0; "zero")]
+    #[tokio::test]
+    async fn test_u8_to_postgres(val: u8) {
+        let (mut client, connection) =
+            tokio_postgres::connect("host=localhost user=postgres", NoTls)
+                .await
+                .unwrap();
+        tokio::spawn(async move {
+            if let Err(e) = connection.await {
+                eprintln!("connection error: {}", e);
+            }
+        });
+        let value = PgSmallIntU8(val);
+        let tx = client.transaction().await.unwrap();
+        let _ = tx.query("CREATE TABLE test (value SMALLINT)", &[]).await;
+        let _ = tx
+            .query("INSERT INTO test (value) VALUES ($1)", &[&value])
+            .await;
+        let row = tx.query_one("SELECT value FROM test", &[]).await.unwrap();
+        let res: PgSmallIntU8 = row.get("value");
+        let _ = tx.rollback().await;
+        assert_eq!(res.0, value.0);
+    }
+}
