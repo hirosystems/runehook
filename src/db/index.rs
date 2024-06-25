@@ -131,6 +131,6 @@ pub async fn index_block(
         ctx.expect_logger(),
         "Block {} indexed in {}s",
         block_height,
-        stopwatch.elapsed().as_millis() / 1000
+        stopwatch.elapsed().as_millis() as f32 / 1000.0
     );
 }

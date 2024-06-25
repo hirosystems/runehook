@@ -3,8 +3,8 @@ use std::{collections::HashMap, str::FromStr};
 use cache::transaction_cache::InputRuneBalance;
 use chainhook_sdk::utils::Context;
 use models::{
-    db_ledger_entry::DbLedgerEntry,
-    db_rune::{DbRune, DbRuneUpdate},
+    db_balance_update::DbBalanceUpdate, db_ledger_entry::DbLedgerEntry, db_rune::DbRune,
+    db_rune_update::DbRuneUpdate,
 };
 use ordinals::RuneId;
 use refinery::embed_migrations;
@@ -136,15 +136,18 @@ pub async fn pg_update_runes(
     db_tx: &mut Transaction<'_>,
     ctx: &Context,
 ) -> Result<bool, Error> {
-    let stmt = db_tx.prepare(
-        "UPDATE runes
+    let stmt = db_tx
+        .prepare(
+            "UPDATE runes
         SET minted = minted + $1,
             total_mints = total_mints + $2,
             burned = burned + $3,
             total_burns = total_burns + $4,
             total_operations = total_operations + $5
-        WHERE id = $6"
-    ).await.expect("Unable to prepare statement");
+        WHERE id = $6",
+        )
+        .await
+        .expect("Unable to prepare statement");
     for row in rows.iter() {
         match db_tx
             .execute(
@@ -165,6 +168,42 @@ pub async fn pg_update_runes(
                 error!(
                     ctx.expect_logger(),
                     "Error updating rune: {:?} {:?}", e, row
+                );
+                panic!()
+            }
+        };
+    }
+    Ok(true)
+}
+
+pub async fn pg_update_balances(
+    rows: &Vec<DbBalanceUpdate>,
+    increase: bool,
+    db_tx: &mut Transaction<'_>,
+    ctx: &Context,
+) -> Result<bool, Error> {
+    let stmt_str = if increase {
+        "INSERT INTO balances (rune_id, address, balance)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (rune_id, address) DO UPDATE SET balance = balances.balance + EXCLUDED.balance"
+    } else {
+        "UPDATE balances SET balance = GREATEST(balance - $3, 0::numeric)
+        WHERE rune_id = $1 AND address = $2"
+    };
+    let stmt = db_tx
+        .prepare(stmt_str)
+        .await
+        .expect("Unable to prepare statement");
+    for row in rows.iter() {
+        match db_tx
+            .execute(&stmt, &[&row.rune_id, &row.address, &row.balance])
+            .await
+        {
+            Ok(_) => {}
+            Err(e) => {
+                error!(
+                    ctx.expect_logger(),
+                    "Error updating balance (increase={}): {:?} {:?}", increase, e, row
                 );
                 panic!()
             }
