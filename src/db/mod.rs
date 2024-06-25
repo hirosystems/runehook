@@ -230,8 +230,8 @@ pub async fn pg_insert_ledger_entries(
     let stmt = db_tx
         .prepare(
             "INSERT INTO ledger
-        (rune_id, block_height, tx_index, tx_id, output, address, receiver_address, amount, operation, timestamp)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
+        (rune_id, block_height, tx_index, event_index, tx_id, output, address, receiver_address, amount, operation, timestamp)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
         )
         .await
         .expect("Unable to prepare statement");
@@ -243,6 +243,7 @@ pub async fn pg_insert_ledger_entries(
                     &row.rune_id,
                     &row.block_height,
                     &row.tx_index,
+                    &row.event_index,
                     &row.tx_id,
                     &row.output,
                     &row.address,

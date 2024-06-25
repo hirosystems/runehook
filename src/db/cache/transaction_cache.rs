@@ -26,6 +26,8 @@ pub struct TransactionCache {
     pub tx_index: u32,
     pub tx_id: String,
     timestamp: u32,
+    /// Index of the ledger entry we're inserting next for this transaction.
+    next_event_index: u32,
     /// Rune etched during this transaction
     pub etching: Option<DbRune>,
     /// The output where all unallocated runes will be transferred to.
@@ -51,6 +53,7 @@ impl TransactionCache {
             network,
             block_height,
             tx_index,
+            next_event_index: 0,
             tx_id: tx_id.clone(),
             timestamp,
             etching: None,
@@ -115,7 +118,7 @@ impl TransactionCache {
         let mut results = vec![];
         for (rune_id, unallocated) in self.input_runes.iter() {
             for balance in unallocated {
-                results.push(DbLedgerEntry::from_values(
+                results.push(new_ledger_entry(
                     balance.amount,
                     *rune_id,
                     self.block_height,
@@ -126,6 +129,7 @@ impl TransactionCache {
                     None,
                     DbLedgerOperation::Burn,
                     self.timestamp,
+                    &mut self.next_event_index,
                 ));
             }
         }
@@ -149,6 +153,7 @@ impl TransactionCache {
                 unallocated,
                 &self.eligible_outputs,
                 0,
+                &mut self.next_event_index,
                 ctx,
             ));
         }
@@ -211,7 +216,7 @@ impl TransactionCache {
                 amount: mint_amount.0,
             },
         );
-        DbLedgerEntry::from_values(
+        new_ledger_entry(
             mint_amount.0,
             rune_id.clone(),
             self.block_height,
@@ -222,6 +227,7 @@ impl TransactionCache {
             None,
             DbLedgerOperation::Mint,
             self.timestamp,
+            &mut self.next_event_index,
         )
     }
 
@@ -229,7 +235,7 @@ impl TransactionCache {
         // TODO: What's the default mint amount if none was provided?
         let mint_amount = db_rune.terms_amount.unwrap_or(PgNumericU128(0));
         // This entry does not go in the input runes, it gets burned immediately.
-        DbLedgerEntry::from_values(
+        new_ledger_entry(
             mint_amount.0,
             rune_id.clone(),
             self.block_height,
@@ -240,6 +246,7 @@ impl TransactionCache {
             None,
             DbLedgerOperation::Burn,
             self.timestamp,
+            &mut self.next_event_index,
         )
     }
 
@@ -290,6 +297,7 @@ impl TransactionCache {
                 available_inputs,
                 &self.eligible_outputs,
                 edict.amount,
+                &mut self.next_event_index,
                 ctx,
             ));
         } else {
@@ -323,6 +331,7 @@ impl TransactionCache {
                                 available_inputs,
                                 &self.eligible_outputs,
                                 per_output + extra,
+                                &mut self.next_event_index,
                                 ctx,
                             ));
                         }
@@ -341,6 +350,7 @@ impl TransactionCache {
                                 available_inputs,
                                 &self.eligible_outputs,
                                 amount,
+                                &mut self.next_event_index,
                                 ctx,
                             ));
                         }
@@ -363,6 +373,7 @@ impl TransactionCache {
                         available_inputs,
                         &self.eligible_outputs,
                         amount,
+                        &mut self.next_event_index,
                         ctx,
                     ));
                 }
@@ -392,6 +403,36 @@ impl TransactionCache {
     }
 }
 
+fn new_ledger_entry(
+    amount: u128,
+    rune_id: RuneId,
+    block_height: u64,
+    tx_index: u32,
+    tx_id: &String,
+    output: Option<u32>,
+    address: Option<&String>,
+    receiver_address: Option<&String>,
+    operation: DbLedgerOperation,
+    timestamp: u32,
+    next_event_index: &mut u32,
+) -> DbLedgerEntry {
+    let entry = DbLedgerEntry::from_values(
+        amount,
+        rune_id,
+        block_height,
+        tx_index,
+        *next_event_index,
+        tx_id,
+        output,
+        address,
+        receiver_address,
+        operation,
+        timestamp,
+    );
+    *next_event_index += 1;
+    entry
+}
+
 /// Takes `amount` rune balance from `available_inputs` and moves it to `output` by generating the correct ledger entries.
 /// Modifies `available_inputs` to consume balance that is already moved. If `amount` is zero, all remaining balances will be
 /// transferred. If `output` is `None`, the runes will be burnt.
@@ -406,6 +447,7 @@ fn move_rune_balance_to_output(
     available_inputs: &mut VecDeque<InputRuneBalance>,
     eligible_outputs: &HashMap<u32, ScriptBuf>,
     amount: u128,
+    next_event_index: &mut u32,
     ctx: &Context,
 ) -> Vec<DbLedgerEntry> {
     let mut results = vec![];
@@ -452,7 +494,7 @@ fn move_rune_balance_to_output(
         };
         // Empty sender address means this balance was minted or premined, so we have no "send" entry to add.
         if let Some(sender_address) = input_bal.address.clone() {
-            results.push(DbLedgerEntry::from_values(
+            results.push(new_ledger_entry(
                 balance_taken,
                 *rune_id,
                 block_height,
@@ -464,6 +506,7 @@ fn move_rune_balance_to_output(
                 receiver_address.as_ref(),
                 operation.clone(),
                 timestamp,
+                next_event_index,
             ));
         }
         if balance_taken < input_bal.amount {
@@ -481,7 +524,7 @@ fn move_rune_balance_to_output(
     }
     // Add the "receive" entry, if applicable.
     if receiver_address.is_some() && total_sent > 0 {
-        results.push(DbLedgerEntry::from_values(
+        results.push(new_ledger_entry(
             total_sent,
             *rune_id,
             block_height,
@@ -492,6 +535,7 @@ fn move_rune_balance_to_output(
             None,
             DbLedgerOperation::Receive,
             timestamp,
+            next_event_index,
         ));
     }
     results
