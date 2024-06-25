@@ -30,6 +30,7 @@ pub struct DbRune {
     pub total_mints: PgBigIntU32,
     pub burned: PgNumericU128,
     pub total_burns: PgBigIntU32,
+    pub total_operations: PgBigIntU32,
     pub timestamp: PgBigIntU32,
 }
 
@@ -97,6 +98,7 @@ impl DbRune {
             total_mints: PgBigIntU32(0),
             burned: PgNumericU128(0),
             total_burns: PgBigIntU32(0),
+            total_operations: PgBigIntU32(0),
             timestamp: PgBigIntU32(timestamp),
         }
     }
@@ -131,6 +133,7 @@ impl DbRune {
             total_mints: PgBigIntU32(0),
             burned: PgNumericU128(0),
             total_burns: PgBigIntU32(0),
+            total_operations: PgBigIntU32(0),
             timestamp: PgBigIntU32(timestamp),
         }
     }
@@ -158,6 +161,7 @@ impl DbRune {
             total_mints: row.get("total_mints"),
             burned: row.get("burned"),
             total_burns: row.get("total_burns"),
+            total_operations: row.get("total_operations"),
             timestamp: row.get("timestamp"),
         }
     }
@@ -178,6 +182,7 @@ pub struct DbRuneUpdate {
     pub total_mints: PgBigIntU32,
     pub burned: PgNumericU128,
     pub total_burns: PgBigIntU32,
+    pub total_operations: PgBigIntU32,
 }
 
 impl DbRuneUpdate {
@@ -187,7 +192,8 @@ impl DbRuneUpdate {
             minted: amount,
             total_mints: PgBigIntU32(1),
             burned: PgNumericU128(0),
-            total_burns: PgBigIntU32(0)
+            total_burns: PgBigIntU32(0),
+            total_operations: PgBigIntU32(1),
         }
     }
 
@@ -197,7 +203,19 @@ impl DbRuneUpdate {
             minted: PgNumericU128(0),
             total_mints: PgBigIntU32(0),
             burned: amount,
-            total_burns: PgBigIntU32(1)
+            total_burns: PgBigIntU32(1),
+            total_operations: PgBigIntU32(1),
+        }
+    }
+
+    pub fn from_operation(id: String) -> Self {
+        DbRuneUpdate {
+            id,
+            minted: PgNumericU128(0),
+            total_mints: PgBigIntU32(0),
+            burned: PgNumericU128(0),
+            total_burns: PgBigIntU32(0),
+            total_operations: PgBigIntU32(1),
         }
     }
 }

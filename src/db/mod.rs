@@ -2,7 +2,10 @@ use std::{collections::HashMap, str::FromStr};
 
 use cache::transaction_cache::InputRuneBalance;
 use chainhook_sdk::utils::Context;
-use models::{db_ledger_entry::DbLedgerEntry, db_rune::{DbRune, DbRuneUpdate}};
+use models::{
+    db_ledger_entry::DbLedgerEntry,
+    db_rune::{DbRune, DbRuneUpdate},
+};
 use ordinals::RuneId;
 use refinery::embed_migrations;
 use tokio_postgres::{types::ToSql, Client, Error, NoTls, Transaction};
@@ -135,8 +138,12 @@ pub async fn pg_update_runes(
 ) -> Result<bool, Error> {
     let stmt = db_tx.prepare(
         "UPDATE runes
-        SET minted = minted + $1, total_mints = total_mints + $2, burned = burned + $3, total_burns = total_burns + $4
-        WHERE id = $5"
+        SET minted = minted + $1,
+            total_mints = total_mints + $2,
+            burned = burned + $3,
+            total_burns = total_burns + $4,
+            total_operations = total_operations + $5
+        WHERE id = $6"
     ).await.expect("Unable to prepare statement");
     for row in rows.iter() {
         match db_tx
@@ -147,6 +154,7 @@ pub async fn pg_update_runes(
                     &row.total_mints,
                     &row.burned,
                     &row.total_burns,
+                    &row.total_operations,
                     &row.id,
                 ],
             )
@@ -238,16 +246,13 @@ pub async fn pg_get_block_height(client: &mut Client, _ctx: &Context) -> Option<
     }
 }
 
-pub async fn pg_get_rune_by_rune_id(
-    rune_id: &RuneId,
+pub async fn pg_get_rune_by_id(
+    id: &RuneId,
     db_tx: &mut Transaction<'_>,
     ctx: &Context,
 ) -> Option<DbRune> {
     let row = match db_tx
-        .query_opt(
-            "SELECT * FROM runes WHERE id = $1",
-            &[&rune_id.to_string()],
-        )
+        .query_opt("SELECT * FROM runes WHERE id = $1", &[&id.to_string()])
         .await
     {
         Ok(row) => row,

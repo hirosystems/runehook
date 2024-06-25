@@ -19,7 +19,7 @@ use crate::db::{
         db_ledger_operation::DbLedgerOperation,
         db_rune::{DbRune, DbRuneUpdate},
     },
-    pg_get_missed_input_rune_balances, pg_get_rune_by_rune_id,
+    pg_get_missed_input_rune_balances, pg_get_rune_by_id,
 };
 
 use super::{
@@ -244,7 +244,7 @@ impl IndexCache {
         }
         // Cache miss, look in DB.
         self.db_cache.flush(db_tx, ctx).await;
-        let Some(db_rune) = pg_get_rune_by_rune_id(rune_id, db_tx, ctx).await else {
+        let Some(db_rune) = pg_get_rune_by_id(rune_id, db_tx, ctx).await else {
             return None;
         };
         self.rune_cache.put(rune_id.clone(), db_rune.clone());
@@ -297,7 +297,8 @@ impl IndexCache {
         self.tx_cache.set_input_rune_balances(final_input_runes);
     }
 
-    /// Take ledger entries returned by the `TransactionCache` and add them to the `DbCache`.
+    /// Take ledger entries returned by the `TransactionCache` and add them to the `DbCache`. Update global balances and counters
+    /// as well.
     fn add_ledger_entries_to_db_cache(&mut self, entries: &Vec<DbLedgerEntry>) {
         self.db_cache.ledger_entries.extend(entries.clone());
         let mut rune_updates: HashMap<String, DbRuneUpdate> = HashMap::new();
@@ -309,20 +310,32 @@ impl IndexCache {
                         .and_modify(|i| {
                             i.minted += entry.amount;
                             i.total_mints += 1;
+                            i.total_operations += 1;
                         })
                         .or_insert(DbRuneUpdate::from_mint(entry.rune_id.clone(), entry.amount));
-                },
+                }
                 DbLedgerOperation::Burn => {
                     rune_updates
                         .entry(entry.rune_id.clone())
                         .and_modify(|i| {
                             i.burned += entry.amount;
                             i.total_burns += 1;
+                            i.total_operations += 1;
                         })
                         .or_insert(DbRuneUpdate::from_burn(entry.rune_id.clone(), entry.amount));
-                },
-                DbLedgerOperation::Send => {},
+                }
+                DbLedgerOperation::Send => {
+                    rune_updates
+                        .entry(entry.rune_id.clone())
+                        .and_modify(|i| i.total_operations += 1)
+                        .or_insert(DbRuneUpdate::from_operation(entry.rune_id.clone()));
+                }
                 DbLedgerOperation::Receive => {
+                    rune_updates
+                        .entry(entry.rune_id.clone())
+                        .and_modify(|i| i.total_operations += 1)
+                        .or_insert(DbRuneUpdate::from_operation(entry.rune_id.clone()));
+
                     // Add to output LRU cache if it's received balance.
                     let k = (entry.tx_id.clone(), entry.output.0);
                     let rune_id = RuneId::from_str(entry.rune_id.as_str()).unwrap();
@@ -344,6 +357,8 @@ impl IndexCache {
                 }
             }
         }
-        self.db_cache.rune_updates.extend(rune_updates.values().cloned());
+        self.db_cache
+            .rune_updates
+            .extend(rune_updates.values().cloned());
     }
 }
