@@ -29,7 +29,7 @@ pub struct TransactionCache {
     /// Rune etched during this transaction
     pub etching: Option<DbRune>,
     /// The output where all unallocated runes will be transferred to.
-    pointer: u32,
+    pointer: Option<u32>,
     /// Holds input runes for the current transaction (input to this tx, premined or minted). Balances in the vector are in the
     /// order in which they were input to this transaction.
     input_runes: HashMap<RuneId, VecDeque<InputRuneBalance>>,
@@ -54,7 +54,7 @@ impl TransactionCache {
             tx_id: tx_id.clone(),
             timestamp,
             etching: None,
-            pointer: 0,
+            pointer: None,
             input_runes: HashMap::new(),
             eligible_outputs: HashMap::new(),
             total_outputs: 0,
@@ -100,9 +100,14 @@ impl TransactionCache {
                 ctx.expect_logger(),
                 "{}: no eligible non-OP_RETURN output found", self.tx_id
             );
-        } else {
-            self.pointer = runestone.pointer.unwrap_or(first_eligible_output.unwrap());
         }
+        self.pointer = if runestone.pointer.is_some() {
+            runestone.pointer
+        } else if first_eligible_output.is_some() {
+            first_eligible_output
+        } else {
+            None
+        };
     }
 
     /// Burns the rune balances input to this transaction.
@@ -116,8 +121,7 @@ impl TransactionCache {
                     self.block_height,
                     self.tx_index,
                     &self.tx_id,
-                    // TODO: Should this be NULL if we're burning?
-                    self.pointer,
+                    None,
                     balance.address.as_ref(),
                     None,
                     DbLedgerOperation::Burn,
@@ -213,7 +217,7 @@ impl TransactionCache {
             self.block_height,
             self.tx_index,
             &self.tx_id,
-            self.pointer,
+            None,
             None,
             None,
             DbLedgerOperation::Mint,
@@ -231,14 +235,12 @@ impl TransactionCache {
             self.block_height,
             self.tx_index,
             &self.tx_id,
-            // TODO: Should this be NULL if we're burning?
-            self.pointer,
+            None,
             None,
             None,
             DbLedgerOperation::Burn,
             self.timestamp,
         )
-        // TODO: Update rune minted+burned total and number of mints+burns
     }
 
     pub fn apply_edict(&mut self, edict: &Edict, ctx: &Context) -> Vec<DbLedgerEntry> {
@@ -271,88 +273,109 @@ impl TransactionCache {
             .unwrap_or(0);
         // Perform movements.
         let mut results = vec![];
-        match edict.output {
-            // An edict with output equal to the number of transaction outputs allocates `amount` runes to each non-OP_RETURN
-            // output in order.
-            output if output == self.total_outputs => {
-                let mut output_keys: Vec<u32> = self.eligible_outputs.keys().cloned().collect();
-                output_keys.sort();
-                if edict.amount == 0 {
-                    // Divide equally. If the number of unallocated runes is not divisible by the number of non-OP_RETURN outputs,
-                    // 1 additional rune is assigned to the first R non-OP_RETURN outputs, where R is the remainder after dividing
-                    // the balance of unallocated units of rune id by the number of non-OP_RETURN outputs.
-                    let len = self.eligible_outputs.len() as u128;
-                    let per_output = unallocated / len;
-                    let mut remainder = unallocated % len;
-                    for output in output_keys {
-                        let mut extra = 0;
-                        if remainder > 0 {
-                            extra = 1;
-                            remainder -= 1;
+        if self.eligible_outputs.len() == 0 {
+            // No eligible outputs means burn.
+            warn!(
+                ctx.expect_logger(),
+                "{}: no eligible outputs for edict on rune {}", self.tx_id, edict.id
+            );
+            results.extend(move_rune_balance_to_output(
+                self.network,
+                self.block_height,
+                &self.tx_id,
+                self.tx_index,
+                self.timestamp,
+                None, // This will force a burn.
+                &rune_id,
+                available_inputs,
+                &self.eligible_outputs,
+                edict.amount,
+                ctx,
+            ));
+        } else {
+            match edict.output {
+                // An edict with output equal to the number of transaction outputs allocates `amount` runes to each non-OP_RETURN
+                // output in order.
+                output if output == self.total_outputs => {
+                    let mut output_keys: Vec<u32> = self.eligible_outputs.keys().cloned().collect();
+                    output_keys.sort();
+                    if edict.amount == 0 {
+                        // Divide equally. If the number of unallocated runes is not divisible by the number of non-OP_RETURN outputs,
+                        // 1 additional rune is assigned to the first R non-OP_RETURN outputs, where R is the remainder after dividing
+                        // the balance of unallocated units of rune id by the number of non-OP_RETURN outputs.
+                        let len = self.eligible_outputs.len() as u128;
+                        let per_output = unallocated / len;
+                        let mut remainder = unallocated % len;
+                        for output in output_keys {
+                            let mut extra = 0;
+                            if remainder > 0 {
+                                extra = 1;
+                                remainder -= 1;
+                            }
+                            results.extend(move_rune_balance_to_output(
+                                self.network,
+                                self.block_height,
+                                &self.tx_id,
+                                self.tx_index,
+                                self.timestamp,
+                                Some(output),
+                                &rune_id,
+                                available_inputs,
+                                &self.eligible_outputs,
+                                per_output + extra,
+                                ctx,
+                            ));
                         }
-                        results.extend(move_rune_balance_to_output(
-                            self.network,
-                            self.block_height,
-                            &self.tx_id,
-                            self.tx_index,
-                            self.timestamp,
-                            output,
-                            &rune_id,
-                            available_inputs,
-                            &self.eligible_outputs,
-                            per_output + extra,
-                            ctx,
-                        ));
-                    }
-                } else {
-                    // Give `amount` to all outputs or until unallocated runs out.
-                    for output in output_keys {
-                        let amount = edict.amount.min(unallocated);
-                        results.extend(move_rune_balance_to_output(
-                            self.network,
-                            self.block_height,
-                            &self.tx_id,
-                            self.tx_index,
-                            self.timestamp,
-                            output,
-                            &rune_id,
-                            available_inputs,
-                            &self.eligible_outputs,
-                            amount,
-                            ctx,
-                        ));
+                    } else {
+                        // Give `amount` to all outputs or until unallocated runs out.
+                        for output in output_keys {
+                            let amount = edict.amount.min(unallocated);
+                            results.extend(move_rune_balance_to_output(
+                                self.network,
+                                self.block_height,
+                                &self.tx_id,
+                                self.tx_index,
+                                self.timestamp,
+                                Some(output),
+                                &rune_id,
+                                available_inputs,
+                                &self.eligible_outputs,
+                                amount,
+                                ctx,
+                            ));
+                        }
                     }
                 }
-            }
-            // Send balance to the output specified by the edict.
-            output if output < self.total_outputs => {
-                let mut amount = edict.amount;
-                if edict.amount == 0 {
-                    amount = unallocated;
+                // Send balance to the output specified by the edict.
+                output if output < self.total_outputs => {
+                    let mut amount = edict.amount;
+                    if edict.amount == 0 {
+                        amount = unallocated;
+                    }
+                    results.extend(move_rune_balance_to_output(
+                        self.network,
+                        self.block_height,
+                        &self.tx_id,
+                        self.tx_index,
+                        self.timestamp,
+                        Some(edict.output),
+                        &rune_id,
+                        available_inputs,
+                        &self.eligible_outputs,
+                        amount,
+                        ctx,
+                    ));
                 }
-                results.extend(move_rune_balance_to_output(
-                    self.network,
-                    self.block_height,
-                    &self.tx_id,
-                    self.tx_index,
-                    self.timestamp,
-                    edict.output,
-                    &rune_id,
-                    available_inputs,
-                    &self.eligible_outputs,
-                    amount,
-                    ctx,
-                ));
-            }
-            _ => {
-                warn!(
-                    ctx.expect_logger(),
-                    "{}: edict for rune {} attempted move to nonexistent output {}",
-                    self.tx_id,
-                    edict.id,
-                    edict.output
-                );
-                // TODO: Burn
+                _ => {
+                    warn!(
+                        ctx.expect_logger(),
+                        "{}: edict for rune {} attempted move to nonexistent output {}",
+                        self.tx_id,
+                        edict.id,
+                        edict.output
+                    );
+                    // TODO: Burn
+                }
             }
         }
         results
@@ -371,14 +394,14 @@ impl TransactionCache {
 
 /// Takes `amount` rune balance from `available_inputs` and moves it to `output` by generating the correct ledger entries.
 /// Modifies `available_inputs` to consume balance that is already moved. If `amount` is zero, all remaining balances will be
-/// transferred.
+/// transferred. If `output` is `None`, the runes will be burnt.
 fn move_rune_balance_to_output(
     network: Network,
     block_height: u64,
     tx_id: &String,
     tx_index: u32,
     timestamp: u32,
-    output: u32,
+    output: Option<u32>,
     rune_id: &RuneId,
     available_inputs: &mut VecDeque<InputRuneBalance>,
     eligible_outputs: &HashMap<u32, ScriptBuf>,
@@ -387,24 +410,28 @@ fn move_rune_balance_to_output(
 ) -> Vec<DbLedgerEntry> {
     let mut results = vec![];
     // Who is this balance going to?
-    let receiver_address = match eligible_outputs.get(&output) {
-        Some(script) => match Address::from_script(script, network) {
-            Ok(address) => Some(address.to_string()),
-            Err(e) => {
+    let receiver_address = if let Some(output) = output {
+        match eligible_outputs.get(&output) {
+            Some(script) => match Address::from_script(script, network) {
+                Ok(address) => Some(address.to_string()),
+                Err(e) => {
+                    warn!(
+                        ctx.expect_logger(),
+                        "{}: unable to decode address for output {}, {}", tx_id, output, e
+                    );
+                    None
+                }
+            },
+            None => {
                 warn!(
                     ctx.expect_logger(),
-                    "{}: unable to decode address for output {}, {}", tx_id, output, e
+                    "{}: attempted move to non-eligible output {}", tx_id, output
                 );
                 None
             }
-        },
-        None => {
-            warn!(
-                ctx.expect_logger(),
-                "{}: attempted move to non-eligible output {}", tx_id, output
-            );
-            None
         }
+    } else {
+        None
     };
     let operation = if receiver_address.is_some() {
         DbLedgerOperation::Send

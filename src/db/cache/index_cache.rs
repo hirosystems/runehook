@@ -335,11 +335,11 @@ impl IndexCache {
                             .balance_deductions
                             .entry((entry.rune_id.clone(), address.clone()))
                             .and_modify(|i| i.balance += entry.amount)
-                            .or_insert(DbBalanceUpdate {
-                                rune_id: entry.rune_id.clone(),
+                            .or_insert(DbBalanceUpdate::from_operation(
+                                entry.rune_id.clone(),
                                 address,
-                                balance: entry.amount,
-                            });
+                                entry.amount,
+                            ));
                     }
                 }
                 DbLedgerOperation::Receive => {
@@ -353,15 +353,15 @@ impl IndexCache {
                             .balance_increases
                             .entry((entry.rune_id.clone(), address.clone()))
                             .and_modify(|i| i.balance += entry.amount)
-                            .or_insert(DbBalanceUpdate {
-                                rune_id: entry.rune_id.clone(),
+                            .or_insert(DbBalanceUpdate::from_operation(
+                                entry.rune_id.clone(),
                                 address,
-                                balance: entry.amount,
-                            });
+                                entry.amount,
+                            ));
                     }
 
                     // Add to output LRU cache if it's received balance.
-                    let k = (entry.tx_id.clone(), entry.output.0);
+                    let k = (entry.tx_id.clone(), entry.output.unwrap().0);
                     let rune_id = RuneId::from_str(entry.rune_id.as_str()).unwrap();
                     let balance = InputRuneBalance {
                         address: entry.address.clone(),

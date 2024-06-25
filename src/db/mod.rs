@@ -183,11 +183,13 @@ pub async fn pg_update_balances(
     ctx: &Context,
 ) -> Result<bool, Error> {
     let stmt_str = if increase {
-        "INSERT INTO balances (rune_id, address, balance)
-            VALUES ($1, $2, $3)
-            ON CONFLICT (rune_id, address) DO UPDATE SET balance = balances.balance + EXCLUDED.balance"
+        "INSERT INTO balances (rune_id, address, balance, total_operations) VALUES ($1, $2, $3, $4)
+        ON CONFLICT (rune_id, address) DO UPDATE SET
+            balance = balances.balance + EXCLUDED.balance,
+            total_operations = balances.total_operations + EXCLUDED.total_operations"
     } else {
-        "UPDATE balances SET balance = GREATEST(balance - $3, 0::numeric)
+        "UPDATE balances
+        SET balance = GREATEST(balance - $3, 0::numeric), total_operations = total_operations + $4
         WHERE rune_id = $1 AND address = $2"
     };
     let stmt = db_tx
@@ -196,7 +198,15 @@ pub async fn pg_update_balances(
         .expect("Unable to prepare statement");
     for row in rows.iter() {
         match db_tx
-            .execute(&stmt, &[&row.rune_id, &row.address, &row.balance])
+            .execute(
+                &stmt,
+                &[
+                    &row.rune_id,
+                    &row.address,
+                    &row.balance,
+                    &row.total_operations,
+                ],
+            )
             .await
         {
             Ok(_) => {}

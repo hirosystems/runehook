@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS ledger (
     block_height            NUMERIC NOT NULL,
     tx_index                BIGINT NOT NULL,
     tx_id                   TEXT NOT NULL,
-    output                  BIGINT NOT NULL,
+    output                  BIGINT,
     address                 TEXT,
     receiver_address        TEXT,
     amount                  NUMERIC NOT NULL,
