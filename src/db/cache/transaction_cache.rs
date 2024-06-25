@@ -200,7 +200,6 @@ impl TransactionCache {
     pub fn apply_mint(&mut self, rune_id: &RuneId, db_rune: &DbRune) -> DbLedgerEntry {
         // TODO: What's the default mint amount if none was provided?
         let mint_amount = db_rune.terms_amount.unwrap_or(PgNumericU128(0));
-        // TODO: Update rune minted total and number of mints
         self.add_input_runes(
             rune_id,
             InputRuneBalance {
@@ -416,10 +415,7 @@ fn move_rune_balance_to_output(
     let mut total_sent = 0;
     loop {
         let Some(input_bal) = available_inputs.pop_front() else {
-            warn!(
-                ctx.expect_logger(),
-                "{}: move amount is not satisfied by available inputs for output {}", tx_id, output
-            );
+            // Unallocated balance ran out.
             break;
         };
         let balance_taken = if amount == 0 {

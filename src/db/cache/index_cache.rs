@@ -15,7 +15,9 @@ use tokio_postgres::Transaction;
 
 use crate::db::{
     models::{
-        db_ledger_entry::DbLedgerEntry, db_ledger_operation::DbLedgerOperation, db_rune::DbRune,
+        db_ledger_entry::DbLedgerEntry,
+        db_ledger_operation::DbLedgerOperation,
+        db_rune::{DbRune, DbRuneUpdate},
     },
     pg_get_missed_input_rune_balances, pg_get_rune_by_rune_id,
 };
@@ -70,7 +72,7 @@ impl IndexCache {
     pub fn end_transaction(&mut self, _db_tx: &mut Transaction<'_>, ctx: &Context) {
         let entries = self.tx_cache.allocate_remaining_balances(ctx);
         for entry in entries.iter() {
-            info!(
+            debug!(
                 ctx.expect_logger(),
                 "Assign unallocated {} {} at block {}",
                 entry.rune_id.clone(),
@@ -89,7 +91,7 @@ impl IndexCache {
         db_tx: &mut Transaction<'_>,
         ctx: &Context,
     ) {
-        info!(
+        debug!(
             ctx.expect_logger(),
             "Runestone in tx {} ({}) at block {}",
             self.tx_cache.tx_id,
@@ -108,7 +110,7 @@ impl IndexCache {
         db_tx: &mut Transaction<'_>,
         ctx: &Context,
     ) {
-        info!(
+        debug!(
             ctx.expect_logger(),
             "Cenotaph in tx {} ({}) at block {}",
             self.tx_cache.tx_id,
@@ -165,7 +167,10 @@ impl IndexCache {
         ctx: &Context,
     ) {
         let Some(db_rune) = self.get_cached_rune_by_rune_id(rune_id, db_tx, ctx).await else {
-            // log
+            warn!(
+                ctx.expect_logger(),
+                "{}: rune {} not found for mint", self.tx_cache.tx_id, rune_id
+            );
             return;
         };
         let ledger_entry = self.tx_cache.apply_mint(&rune_id, &db_rune);
@@ -186,7 +191,10 @@ impl IndexCache {
         ctx: &Context,
     ) {
         let Some(db_rune) = self.get_cached_rune_by_rune_id(rune_id, db_tx, ctx).await else {
-            // log
+            warn!(
+                ctx.expect_logger(),
+                "{}: rune {} not found for cenotaph mint", self.tx_cache.tx_id, rune_id
+            );
             return;
         };
         let ledger_entry = self.tx_cache.apply_cenotaph_mint(&rune_id, &db_rune);
@@ -202,7 +210,10 @@ impl IndexCache {
 
     pub async fn apply_edict(&mut self, edict: &Edict, db_tx: &mut Transaction<'_>, ctx: &Context) {
         let Some(db_rune) = self.get_cached_rune_by_rune_id(&edict.id, db_tx, ctx).await else {
-            // rune should exist?
+            warn!(
+                ctx.expect_logger(),
+                "{}: rune {} not found for edict", self.tx_cache.tx_id, edict.id
+            );
             return;
         };
         let entries = self.tx_cache.apply_edict(edict, ctx);
@@ -288,30 +299,51 @@ impl IndexCache {
 
     /// Take ledger entries returned by the `TransactionCache` and add them to the `DbCache`.
     fn add_ledger_entries_to_db_cache(&mut self, entries: &Vec<DbLedgerEntry>) {
-        // Add to DB cache.
         self.db_cache.ledger_entries.extend(entries.clone());
-        // Add to output LRU cache if it's received balance.
+        let mut rune_updates: HashMap<String, DbRuneUpdate> = HashMap::new();
         for entry in entries.iter() {
-            if entry.operation != DbLedgerOperation::Receive {
-                continue;
-            }
-            let k = (entry.tx_id.clone(), entry.output.0);
-            let rune_id = RuneId::from_str(entry.rune_id.as_str()).unwrap();
-            let balance = InputRuneBalance {
-                address: entry.address.clone(),
-                amount: entry.amount.0,
-            };
-            if let Some(v) = self.output_cache.get_mut(&k) {
-                if let Some(rune_balance) = v.get_mut(&rune_id) {
-                    rune_balance.push(balance);
-                } else {
-                    v.insert(rune_id, vec![balance]);
+            match entry.operation {
+                DbLedgerOperation::Mint => {
+                    rune_updates
+                        .entry(entry.rune_id.clone())
+                        .and_modify(|i| {
+                            i.minted += entry.amount;
+                            i.total_mints += 1;
+                        })
+                        .or_insert(DbRuneUpdate::from_mint(entry.rune_id.clone(), entry.amount));
+                },
+                DbLedgerOperation::Burn => {
+                    rune_updates
+                        .entry(entry.rune_id.clone())
+                        .and_modify(|i| {
+                            i.burned += entry.amount;
+                            i.total_burns += 1;
+                        })
+                        .or_insert(DbRuneUpdate::from_burn(entry.rune_id.clone(), entry.amount));
+                },
+                DbLedgerOperation::Send => {},
+                DbLedgerOperation::Receive => {
+                    // Add to output LRU cache if it's received balance.
+                    let k = (entry.tx_id.clone(), entry.output.0);
+                    let rune_id = RuneId::from_str(entry.rune_id.as_str()).unwrap();
+                    let balance = InputRuneBalance {
+                        address: entry.address.clone(),
+                        amount: entry.amount.0,
+                    };
+                    if let Some(v) = self.output_cache.get_mut(&k) {
+                        if let Some(rune_balance) = v.get_mut(&rune_id) {
+                            rune_balance.push(balance);
+                        } else {
+                            v.insert(rune_id, vec![balance]);
+                        }
+                    } else {
+                        let mut v = HashMap::new();
+                        v.insert(rune_id, vec![balance]);
+                        self.output_cache.push(k, v);
+                    }
                 }
-            } else {
-                let mut v = HashMap::new();
-                v.insert(rune_id, vec![balance]);
-                self.output_cache.push(k, v);
             }
         }
+        self.db_cache.rune_updates.extend(rune_updates.values().cloned());
     }
 }

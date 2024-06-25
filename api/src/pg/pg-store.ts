@@ -83,7 +83,7 @@ export class PgStore extends BasePgStore {
       SELECT l.*, r.name, r.spaced_name, r.divisibility, COUNT(*) OVER() AS total
       FROM ledger AS l
       INNER JOIN runes AS r ON r.id = l.rune_id
-      WHERE ${getEtchingIdWhereCondition(this.sql, id)}
+      WHERE ${getEtchingIdWhereCondition(this.sql, id, 'r')}
       ORDER BY l.block_height DESC, l.tx_index DESC
       OFFSET ${offset} LIMIT ${limit}
     `;

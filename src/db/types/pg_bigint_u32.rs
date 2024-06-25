@@ -1,4 +1,4 @@
-use std::error::Error;
+use std::{error::Error, ops::AddAssign};
 
 use bytes::{BufMut, BytesMut};
 use tokio_postgres::types::{to_sql_checked, FromSql, IsNull, ToSql, Type};
@@ -32,6 +32,12 @@ impl<'a> FromSql<'a> for PgBigIntU32 {
 
     fn accepts(ty: &Type) -> bool {
         ty.name() == "int8" || ty.name() == "bigint"
+    }
+}
+
+impl AddAssign<u32> for PgBigIntU32 {
+    fn add_assign(&mut self, other: u32) {
+        self.0 += other;
     }
 }
 

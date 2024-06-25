@@ -2,7 +2,7 @@ use std::{collections::HashMap, str::FromStr};
 
 use cache::transaction_cache::InputRuneBalance;
 use chainhook_sdk::utils::Context;
-use models::{db_ledger_entry::DbLedgerEntry, db_rune::DbRune};
+use models::{db_ledger_entry::DbLedgerEntry, db_rune::{DbRune, DbRuneUpdate}};
 use ordinals::RuneId;
 use refinery::embed_migrations;
 use tokio_postgres::{types::ToSql, Client, Error, NoTls, Transaction};
@@ -128,6 +128,43 @@ pub async fn pg_insert_rune_rows(
     Ok(true)
 }
 
+pub async fn pg_update_runes(
+    rows: &Vec<DbRuneUpdate>,
+    db_tx: &mut Transaction<'_>,
+    ctx: &Context,
+) -> Result<bool, Error> {
+    let stmt = db_tx.prepare(
+        "UPDATE runes
+        SET minted = minted + $1, total_mints = total_mints + $2, burned = burned + $3, total_burns = total_burns + $4
+        WHERE id = $5"
+    ).await.expect("Unable to prepare statement");
+    for row in rows.iter() {
+        match db_tx
+            .execute(
+                &stmt,
+                &[
+                    &row.minted,
+                    &row.total_mints,
+                    &row.burned,
+                    &row.total_burns,
+                    &row.id,
+                ],
+            )
+            .await
+        {
+            Ok(_) => {}
+            Err(e) => {
+                error!(
+                    ctx.expect_logger(),
+                    "Error updating rune: {:?} {:?}", e, row
+                );
+                panic!()
+            }
+        };
+    }
+    Ok(true)
+}
+
 pub async fn pg_insert_ledger_entries(
     rows: &Vec<DbLedgerEntry>,
     db_tx: &mut Transaction<'_>,
@@ -187,7 +224,10 @@ pub async fn pg_get_max_rune_number(client: &mut Client, _ctx: &Context) -> u32 
 
 pub async fn pg_get_block_height(client: &mut Client, _ctx: &Context) -> Option<u64> {
     let row = client
-        .query_opt("SELECT MAX(block_height) AS max FROM runes WHERE id <> '1:0'", &[])
+        .query_opt(
+            "SELECT MAX(block_height) AS max FROM runes WHERE id <> '1:0'",
+            &[],
+        )
         .await
         .expect("error getting max block height")?;
     let max: Option<PgNumericU64> = row.get("max");
@@ -203,14 +243,14 @@ pub async fn pg_get_rune_by_rune_id(
     db_tx: &mut Transaction<'_>,
     ctx: &Context,
 ) -> Option<DbRune> {
-    let rows = match db_tx
-        .query(
-            "SELECT * FROM runes WHERE block_height = $1 AND tx_index = $2",
-            &[&PgNumericU64(rune_id.block), &PgBigIntU32(rune_id.tx)],
+    let row = match db_tx
+        .query_opt(
+            "SELECT * FROM runes WHERE id = $1",
+            &[&rune_id.to_string()],
         )
         .await
     {
-        Ok(rows) => rows,
+        Ok(row) => row,
         Err(e) => {
             error!(
                 ctx.expect_logger(),
@@ -220,10 +260,10 @@ pub async fn pg_get_rune_by_rune_id(
             panic!();
         }
     };
-    let Some(row) = rows.get(0) else {
+    let Some(row) = row else {
         return None;
     };
-    Some(DbRune::from_pg_row(row))
+    Some(DbRune::from_pg_row(&row))
 }
 
 pub async fn pg_get_missed_input_rune_balances(

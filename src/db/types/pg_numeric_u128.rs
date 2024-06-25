@@ -1,6 +1,6 @@
 use std::{
     error::Error,
-    io::{Cursor, Read},
+    io::{Cursor, Read}, ops::{Add, AddAssign},
 };
 
 use bytes::{BufMut, BytesMut};
@@ -91,6 +91,12 @@ impl<'a> FromSql<'a> for PgNumericU128 {
 
     fn accepts(ty: &Type) -> bool {
         ty.name() == "numeric"
+    }
+}
+
+impl AddAssign for PgNumericU128 {
+    fn add_assign(&mut self, other: Self) {
+        self.0 += other.0;
     }
 }
 
