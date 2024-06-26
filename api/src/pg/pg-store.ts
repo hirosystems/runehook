@@ -6,7 +6,14 @@ import {
   connectPostgres,
 } from '@hirosystems/api-toolkit';
 import { ENV } from '../env';
-import { DbCountedQueryResult, DbLedgerEntryWithRune, DbPaginatedResult, DbRune } from './types';
+import {
+  DbBalance,
+  DbCountedQueryResult,
+  DbItemWithRune,
+  DbLedgerEntry,
+  DbPaginatedResult,
+  DbRune,
+} from './types';
 import {
   EtchingParam,
   LimitParam,
@@ -78,13 +85,32 @@ export class PgStore extends BasePgStore {
     id: EtchingParam,
     offset: OffsetParam,
     limit: LimitParam
-  ): Promise<DbPaginatedResult<DbLedgerEntryWithRune>> {
-    const results = await this.sql<DbCountedQueryResult<DbLedgerEntryWithRune>[]>`
-      SELECT l.*, r.name, r.spaced_name, r.divisibility, COUNT(*) OVER() AS total
+  ): Promise<DbPaginatedResult<DbItemWithRune<DbLedgerEntry>>> {
+    const results = await this.sql<DbCountedQueryResult<DbItemWithRune<DbLedgerEntry>>[]>`
+      SELECT l.*, r.name, r.spaced_name, r.divisibility, r.total_operations AS total
       FROM ledger AS l
       INNER JOIN runes AS r ON r.id = l.rune_id
       WHERE ${getEtchingIdWhereCondition(this.sql, id, 'r')}
       ORDER BY l.block_height DESC, l.tx_index DESC
+      OFFSET ${offset} LIMIT ${limit}
+    `;
+    return {
+      total: results[0]?.total ?? 0,
+      results,
+    };
+  }
+
+  async getRuneHolders(
+    id: EtchingParam,
+    offset: OffsetParam,
+    limit: LimitParam
+  ): Promise<DbPaginatedResult<DbItemWithRune<DbBalance>>> {
+    const results = await this.sql<DbCountedQueryResult<DbItemWithRune<DbBalance>>[]>`
+      SELECT b.*, r.name, r.spaced_name, r.divisibility, COUNT(*) OVER() AS total
+      FROM balances AS b
+      INNER JOIN runes AS r ON r.id = b.rune_id
+      WHERE ${getEtchingIdWhereCondition(this.sql, id, 'r')}
+      ORDER BY b.balance DESC
       OFFSET ${offset} LIMIT ${limit}
     `;
     return {

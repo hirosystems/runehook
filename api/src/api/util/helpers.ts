@@ -1,6 +1,6 @@
 import BigNumber from 'bignumber.js';
-import { DbRune, DbLedgerEntryWithRune } from '../../pg/types';
-import { EtchingResponse, EtchingActivityResponse } from '../schemas';
+import { DbBalance, DbItemWithRune, DbLedgerEntry, DbRune } from '../../pg/types';
+import { EtchingResponse, EtchingActivityResponse, BalanceResponse } from '../schemas';
 
 function divisibility(num: string, decimals: number): string {
   return new BigNumber(num).shiftedBy(-1 * decimals).toFixed(decimals);
@@ -36,7 +36,7 @@ export function parseEtchingResponse(rune: DbRune): EtchingResponse {
 }
 
 export function parseEtchingActivityResponse(
-  entry: DbLedgerEntryWithRune
+  entry: DbItemWithRune<DbLedgerEntry>
 ): EtchingActivityResponse {
   return {
     rune: {
@@ -54,5 +54,17 @@ export function parseEtchingActivityResponse(
     receiver_address: entry.receiver_address ?? undefined,
     timestamp: entry.timestamp,
     amount: divisibility(entry.amount, entry.divisibility),
+  };
+}
+
+export function parseBalanceResponse(item: DbItemWithRune<DbBalance>): BalanceResponse {
+  return {
+    rune: {
+      id: item.rune_id,
+      name: item.name,
+      spaced_name: item.spaced_name,
+    },
+    address: item.address,
+    balance: divisibility(item.balance, item.divisibility),
   };
 }

@@ -27,6 +27,7 @@ export type DbRune = {
   total_mints: number;
   burned: string;
   total_burns: number;
+  total_operations: number;
   timestamp: number;
 };
 
@@ -45,8 +46,16 @@ export type DbLedgerEntry = {
   timestamp: number;
 };
 
-export type DbLedgerEntryWithRune = DbLedgerEntry & {
+export type DbItemWithRune<T> = T & {
   name: string;
   spaced_name: string;
   divisibility: number;
+  total_operations: number;
+};
+
+export type DbBalance = {
+  rune_id: string;
+  address: string;
+  balance: string;
+  total_operations: number;
 };

@@ -4,6 +4,7 @@ import { Value } from '@sinclair/typebox/value';
 import { FastifyPluginCallback } from 'fastify';
 import { Server } from 'http';
 import {
+  BalanceResponseSchema,
   EtchingActivityResponseSchema,
   EtchingParamSchema,
   EtchingResponseSchema,
@@ -12,7 +13,11 @@ import {
   OffsetParamSchema,
   PaginatedResponse,
 } from '../schemas';
-import { parseEtchingActivityResponse, parseEtchingResponse } from '../util/helpers';
+import {
+  parseBalanceResponse,
+  parseEtchingActivityResponse,
+  parseEtchingResponse,
+} from '../util/helpers';
 
 export const EtchingRoutes: FastifyPluginCallback<
   Record<never, never>,
@@ -107,6 +112,39 @@ export const EtchingRoutes: FastifyPluginCallback<
         offset,
         total: results.total,
         results: results.results.map(r => parseEtchingActivityResponse(r)),
+      });
+    }
+  );
+
+  fastify.get(
+    '/etchings/:etching/holders',
+    {
+      schema: {
+        operationId: 'getRuneHolders',
+        summary: 'Rune holders',
+        description: 'Retrieves a paginated list of holders for a Rune',
+        tags: ['Runes'],
+        params: Type.Object({
+          etching: EtchingParamSchema,
+        }),
+        querystring: Type.Object({
+          offset: Type.Optional(OffsetParamSchema),
+          limit: Type.Optional(LimitParamSchema),
+        }),
+        response: {
+          200: PaginatedResponse(BalanceResponseSchema, 'Paginated holders response'),
+        },
+      },
+    },
+    async (request, reply) => {
+      const offset = request.query.offset ?? 0;
+      const limit = request.query.limit ?? 20;
+      const results = await fastify.db.getRuneHolders(request.params.etching, offset, limit);
+      await reply.send({
+        limit,
+        offset,
+        total: results.total,
+        results: results.results.map(r => parseBalanceResponse(r)),
       });
     }
   );
