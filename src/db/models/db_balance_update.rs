@@ -10,6 +10,11 @@ pub struct DbBalanceUpdate {
 
 impl DbBalanceUpdate {
     pub fn from_operation(rune_id: String, address: String, balance: PgNumericU128) -> Self {
-        DbBalanceUpdate { rune_id, address, balance, total_operations: PgBigIntU32(1) }
+        DbBalanceUpdate {
+            rune_id,
+            address,
+            balance,
+            total_operations: PgBigIntU32(1),
+        }
     }
 }

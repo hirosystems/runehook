@@ -38,7 +38,8 @@ impl<'a> FromSql<'a> for PgSmallIntU8 {
 #[cfg(test)]
 mod test {
     use test_case::test_case;
-    use tokio_postgres::NoTls;
+
+    use crate::db::pg_test_client;
 
     use super::PgSmallIntU8;
 
@@ -46,15 +47,7 @@ mod test {
     #[test_case(0; "zero")]
     #[tokio::test]
     async fn test_u8_to_postgres(val: u8) {
-        let (mut client, connection) =
-            tokio_postgres::connect("host=localhost user=postgres", NoTls)
-                .await
-                .unwrap();
-        tokio::spawn(async move {
-            if let Err(e) = connection.await {
-                eprintln!("connection error: {}", e);
-            }
-        });
+        let mut client = pg_test_client().await;
         let value = PgSmallIntU8(val);
         let tx = client.transaction().await.unwrap();
         let _ = tx.query("CREATE TABLE test (value SMALLINT)", &[]).await;

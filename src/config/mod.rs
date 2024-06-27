@@ -68,7 +68,9 @@ impl Config {
                     .unwrap_or("postgres".to_string()),
                 password: config_file.postgres.password,
             },
-            resources: ResourcesConfig { lru_cache_size: config_file.resources.lru_cache_size.unwrap_or(10_000) }
+            resources: ResourcesConfig {
+                lru_cache_size: config_file.resources.lru_cache_size.unwrap_or(10_000),
+            },
         };
         Ok(config)
     }
