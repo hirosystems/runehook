@@ -99,8 +99,8 @@ jobs:
       - name: Setup integration environment
         run: |
           sudo ufw disable
-          docker-compose -f docker/docker-compose.dev.postgres.yml up -d
-          docker-compose -f docker/docker-compose.dev.postgres.yml logs -t -f --no-color &> docker-compose-logs.txt &
+          docker-compose -f ../docker/docker-compose.dev.postgres.yml up -d
+          docker-compose -f ../docker/docker-compose.dev.postgres.yml logs -t -f --no-color &> docker-compose-logs.txt &
 
       - name: Run tests
         run: npm run test:${{ matrix.suite }} -- --coverage
@@ -115,7 +115,7 @@ jobs:
         if: failure()
 
       - name: Teardown integration environment
-        run: docker-compose -f docker/docker-compose.dev.postgres.yml down -v -t 0
+        run: docker-compose -f ../docker/docker-compose.dev.postgres.yml down -v -t 0
         if: always()
 
   runehook-test:
