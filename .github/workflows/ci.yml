@@ -14,10 +14,46 @@ concurrency:
   group: ${{ github.workflow }} @ ${{ github.event.pull_request.head.label || github.head_ref || github.ref }}
   cancel-in-progress: true
 
-# env:
-#   DOCKER_IMAGE: hirosystems/${{ github.event.repository.name }}
-
 jobs:
+  api-lint:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+
+      - name: Cache node modules
+        uses: actions/cache@v4
+        env:
+          cache-name: cache-node-modules
+        with:
+          path: |
+            ~/.npm
+            **/node_modules
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-build-${{ env.cache-name }}-
+            ${{ runner.os }}-build-
+            ${{ runner.os }}-
+
+      - name: Install deps
+        run: npm ci --audit=false
+
+      - name: Lint ESLint
+        run: npm run lint:eslint
+
+      - name: Lint Prettier
+        run: npm run lint:prettier
+
+      - name: Lint Unused Exports
+        run: npm run lint:unused-exports
+
   runehook-test:
     runs-on: ubuntu-latest
     steps:
