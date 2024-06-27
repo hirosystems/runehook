@@ -39,9 +39,7 @@ pub async fn start_service(config: &Config, ctx: &Context) -> Result<(), String>
         } else if bitcoind_chain_tip > chain_tip {
             info!(
                 ctx.expect_logger(),
-                "Scanning on block range {} to {}",
-                chain_tip,
-                bitcoind_chain_tip
+                "Scanning on block range {} to {}", chain_tip, bitcoind_chain_tip
             );
             scan_blocks(
                 ((chain_tip + 1)..bitcoind_chain_tip).collect(),
@@ -98,6 +96,17 @@ pub async fn start_service(config: &Config, ctx: &Context) -> Result<(), String>
             )) => {
                 for block in event.new_blocks.iter_mut() {
                     index_block(&mut pg_client, &mut index_cache, block, ctx).await;
+                }
+            }
+            ObserverEvent::BitcoinChainEvent((
+                BitcoinChainEvent::ChainUpdatedWithReorg(mut event),
+                _,
+            )) => {
+                for block in event.blocks_to_rollback.iter() {
+                    // rollback
+                }
+                for block in event.blocks_to_apply.iter() {
+                    // apply
                 }
             }
             ObserverEvent::Terminate => {}

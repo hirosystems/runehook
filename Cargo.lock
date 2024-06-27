@@ -523,6 +523,8 @@ checksum = "fd16c4719339c4530435d38e511904438d07cce7950afa3718a84ac36c10e89e"
 [[package]]
 name = "chainhook-sdk"
 version = "0.12.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "14eeb8a1a055202ca86122c9508dc4f9d9cd8643ef9f25773173b645c33b09ac"
 dependencies = [
  "base58",
  "base64 0.21.7",
@@ -556,7 +558,9 @@ dependencies = [
 
 [[package]]
 name = "chainhook-types"
-version = "1.3.6"
+version = "1.3.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "63f0d358e5c530dd6888e4678ef4ba3f7782525653a1012d33e96a48020c418d"
 dependencies = [
  "hex",
  "schemars",
@@ -3203,8 +3207,9 @@ dependencies = [
 
 [[package]]
 name = "schemars"
-version = "0.8.16"
-source = "git+https://github.com/hirosystems/schemars.git?branch=feat-chainhook-fixes#d0c10b50478a06198a54e5b90be460112b38b357"
+version = "0.8.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "09c024468a378b7e36765cd36702b7a90cc3cba11654f6685c8f233408e89e92"
 dependencies = [
  "dyn-clone",
  "schemars_derive",
@@ -3214,13 +3219,14 @@ dependencies = [
 
 [[package]]
 name = "schemars_derive"
-version = "0.8.16"
-source = "git+https://github.com/hirosystems/schemars.git?branch=feat-chainhook-fixes#d0c10b50478a06198a54e5b90be460112b38b357"
+version = "0.8.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b1eee588578aff73f856ab961cd2f79e36bc45d7ded33a7562adba4667aecc0e"
 dependencies = [
  "proc-macro2",
  "quote",
  "serde_derive_internals",
- "syn 1.0.109",
+ "syn 2.0.61",
 ]
 
 [[package]]
@@ -3367,13 +3373,13 @@ dependencies = [
 
 [[package]]
 name = "serde_derive_internals"
-version = "0.26.0"
+version = "0.29.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "85bf8229e7920a9f636479437026331ce11aa132b4dde37d121944a44d6e5f3c"
+checksum = "18d26a20a969b9e3fdf2fc2d9f21eda6c40e2de84c9408bb5d3b05d499aae711"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 1.0.109",
+ "syn 2.0.61",
 ]
 
 [[package]]

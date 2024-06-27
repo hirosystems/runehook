@@ -7,7 +7,7 @@ use chainhook_sdk::chainhooks::bitcoin::{
     BitcoinChainhookOccurrence, BitcoinTriggerChainhook,
 };
 use chainhook_sdk::chainhooks::types::{
-    BitcoinChainhookSpecification, BitcoinPredicateType, RunesOperations,
+    BitcoinChainhookSpecification, BitcoinPredicateType,
 };
 use chainhook_sdk::indexer::bitcoin::{
     build_http_client, download_and_parse_block_with_retry, retrieve_block_hash_with_retry,
@@ -39,7 +39,7 @@ pub async fn scan_blocks(
         end_block: None,
         expired_at: None,
         expire_after_occurrence: None,
-        predicate: BitcoinPredicateType::RunesProtocol(RunesOperations::Feed),
+        predicate: BitcoinPredicateType::Block,
         action: chainhook_sdk::chainhooks::types::HookAction::Noop,
         include_proof: false,
         include_inputs: true,
