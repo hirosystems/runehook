@@ -206,6 +206,7 @@ mod test {
             &"14e87956a6bb0f50df1515e85f1dcc4625a7e2ebeb08ab6db7d9211c7cf64fa3".to_string(),
             0,
         );
-        assert!(db_rune.name == "UNCOMMON•GOODS");
+        assert!(db_rune.name == "UNCOMMONGOODS");
+        assert!(db_rune.spaced_name == "UNCOMMON•GOODS");
     }
 }
