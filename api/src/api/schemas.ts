@@ -50,11 +50,10 @@ export const LimitParamSchema = Type.Integer({
 });
 export type LimitParam = Static<typeof LimitParamSchema>;
 
-export const RuneIdSchema = Type.RegEx(/^[0-9]+:[0-9]+$/);
-export const RuneIdSchemaCType = TypeCompiler.Compile(RuneIdSchema);
-export const RuneNameSchema = Type.RegEx(/^[A-Z]+$/);
+const RuneIdSchema = Type.RegEx(/^[0-9]+:[0-9]+$/);
+const RuneNameSchema = Type.RegEx(/^[A-Z]+$/);
 export const RuneNameSchemaCType = TypeCompiler.Compile(RuneNameSchema);
-export const RuneSpacedNameSchema = Type.RegEx(/^[A-Z](•[A-Z]+)+$/);
+const RuneSpacedNameSchema = Type.RegEx(/^[A-Z](•[A-Z]+)+$/);
 export const RuneSpacedNameSchemaCType = TypeCompiler.Compile(RuneSpacedNameSchema);
 
 export const EtchingParamSchema = Type.Union([RuneIdSchema, RuneNameSchema, RuneSpacedNameSchema]);
