@@ -19,14 +19,14 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: api
+        working-directory: ./api
     steps:
       - uses: actions/checkout@v4
 
       - name: Use Node.js
         uses: actions/setup-node@v4
         with:
-          node-version-file: '.nvmrc'
+          node-version-file: 'api/.nvmrc'
 
       - name: Cache node modules
         uses: actions/cache@v4
