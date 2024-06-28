@@ -1,4 +1,7 @@
-use std::collections::{HashMap, VecDeque};
+use std::{
+    collections::{HashMap, VecDeque},
+    fmt,
+};
 
 use bitcoin::{Address, Network, ScriptBuf};
 use chainhook_sdk::{types::bitcoin::TxOut, utils::Context};
@@ -12,6 +15,35 @@ use crate::db::{
 };
 
 #[derive(Debug, Clone)]
+pub struct TransactionLocation {
+    pub network: Network,
+    pub block_hash: String,
+    pub block_height: u64,
+    pub timestamp: u32,
+    pub tx_index: u32,
+    pub tx_id: String,
+}
+
+impl TransactionLocation {
+    pub fn rune_id(&self) -> RuneId {
+        RuneId {
+            block: self.block_height,
+            tx: self.tx_index,
+        }
+    }
+}
+
+impl fmt::Display for TransactionLocation {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "tx: {} ({}) @{}",
+            self.tx_id, self.tx_index, self.block_height
+        )
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct InputRuneBalance {
     /// Previous owner of this balance. If this is `None`, it means the balance was just minted or premined.
     pub address: Option<String>,
@@ -21,12 +53,7 @@ pub struct InputRuneBalance {
 
 /// Holds cached data relevant to a single transaction during indexing.
 pub struct TransactionCache {
-    network: Network,
-    pub block_hash: String,
-    pub block_height: u64,
-    pub tx_index: u32,
-    pub tx_id: String,
-    timestamp: u32,
+    pub location: TransactionLocation,
     /// Index of the ledger entry we're inserting next for this transaction.
     next_event_index: u32,
     /// Rune etched during this transaction
@@ -52,13 +79,15 @@ impl TransactionCache {
         timestamp: u32,
     ) -> Self {
         TransactionCache {
-            network,
-            block_hash: block_hash.clone(),
-            block_height,
-            tx_index,
+            location: TransactionLocation {
+                network,
+                block_hash: block_hash.clone(),
+                block_height,
+                tx_id: tx_id.clone(),
+                tx_index,
+                timestamp,
+            },
             next_event_index: 0,
-            tx_id: tx_id.clone(),
-            timestamp,
             etching: None,
             pointer: None,
             input_runes: HashMap::new(),
@@ -89,7 +118,7 @@ impl TransactionCache {
             let Ok(bytes) = hex::decode(&output.script_pubkey[2..]) else {
                 warn!(
                     ctx.expect_logger(),
-                    "{}: unable to decode script for output {}", self.tx_id, i
+                    "Unable to decode script for output {} {}", i, self.location
                 );
                 continue;
             };
@@ -104,7 +133,7 @@ impl TransactionCache {
         if first_eligible_output.is_none() {
             warn!(
                 ctx.expect_logger(),
-                "{}: no eligible non-OP_RETURN output found", self.tx_id
+                "No eligible non-OP_RETURN output found {}", self.location
             );
         }
         self.pointer = if runestone.pointer.is_some() {
@@ -122,17 +151,13 @@ impl TransactionCache {
         for (rune_id, unallocated) in self.input_runes.iter() {
             for balance in unallocated {
                 results.push(new_ledger_entry(
+                    &self.location,
                     balance.amount,
                     *rune_id,
-                    &self.block_hash,
-                    self.block_height,
-                    self.tx_index,
-                    &self.tx_id,
                     None,
                     balance.address.as_ref(),
                     None,
                     DbLedgerOperation::Burn,
-                    self.timestamp,
                     &mut self.next_event_index,
                 ));
             }
@@ -147,12 +172,7 @@ impl TransactionCache {
         let mut results = vec![];
         for (rune_id, unallocated) in self.input_runes.iter_mut() {
             results.extend(move_rune_balance_to_output(
-                self.network,
-                &self.block_hash,
-                self.block_height,
-                &self.tx_id,
-                self.tx_index,
-                self.timestamp,
+                &self.location,
                 self.pointer,
                 rune_id,
                 unallocated,
@@ -167,19 +187,8 @@ impl TransactionCache {
     }
 
     pub fn apply_etching(&mut self, etching: &Etching, number: u32) -> (RuneId, DbRune) {
-        let rune_id = RuneId {
-            block: self.block_height,
-            tx: self.tx_index,
-        };
-        let db_rune = DbRune::from_etching(
-            etching,
-            number,
-            &self.block_hash,
-            self.block_height,
-            self.tx_index,
-            &self.tx_id,
-            self.timestamp,
-        );
+        let rune_id = self.location.rune_id();
+        let db_rune = DbRune::from_etching(etching, number, &self.location);
         self.etching = Some(db_rune.clone());
         // Move pre-mined balance to input runes.
         if let Some(premine) = etching.premine {
@@ -195,20 +204,9 @@ impl TransactionCache {
     }
 
     pub fn apply_cenotaph_etching(&mut self, rune: &Rune, number: u32) -> (RuneId, DbRune) {
-        let rune_id = RuneId {
-            block: self.block_height,
-            tx: self.tx_index,
-        };
+        let rune_id = self.location.rune_id();
         // If the runestone that produced the cenotaph contained an etching, the etched rune has supply zero and is unmintable.
-        let db_rune = DbRune::from_cenotaph_etching(
-            rune,
-            number,
-            &self.block_hash,
-            self.block_height,
-            self.tx_index,
-            &self.tx_id,
-            self.timestamp,
-        );
+        let db_rune = DbRune::from_cenotaph_etching(rune, number, &self.location);
         self.etching = Some(db_rune.clone());
         (rune_id, db_rune)
     }
@@ -224,17 +222,13 @@ impl TransactionCache {
             },
         );
         new_ledger_entry(
+            &self.location,
             mint_amount.0,
             rune_id.clone(),
-            &self.block_hash,
-            self.block_height,
-            self.tx_index,
-            &self.tx_id,
             None,
             None,
             None,
             DbLedgerOperation::Mint,
-            self.timestamp,
             &mut self.next_event_index,
         )
     }
@@ -244,17 +238,13 @@ impl TransactionCache {
         let mint_amount = db_rune.terms_amount.unwrap_or(PgNumericU128(0));
         // This entry does not go in the input runes, it gets burned immediately.
         new_ledger_entry(
+            &self.location,
             mint_amount.0,
             rune_id.clone(),
-            &self.block_hash,
-            self.block_height,
-            self.tx_index,
-            &self.tx_id,
             None,
             None,
             None,
             DbLedgerOperation::Burn,
-            self.timestamp,
             &mut self.next_event_index,
         )
     }
@@ -265,7 +255,7 @@ impl TransactionCache {
             let Some(etching) = self.etching.as_ref() else {
                 warn!(
                     ctx.expect_logger(),
-                    "{}: attempted edict for nonexistent rune 0:0", self.tx_id
+                    "Attempted edict for nonexistent rune 0:0 {}", self.location
                 );
                 return vec![];
             };
@@ -277,7 +267,7 @@ impl TransactionCache {
         let Some(available_inputs) = self.input_runes.get_mut(&rune_id) else {
             warn!(
                 ctx.expect_logger(),
-                "{}: no unallocated runes {} remain for edict", self.tx_id, edict.id
+                "No unallocated runes {} remain for edict {}", edict.id, self.location
             );
             return vec![];
         };
@@ -293,15 +283,10 @@ impl TransactionCache {
             // No eligible outputs means burn.
             warn!(
                 ctx.expect_logger(),
-                "{}: no eligible outputs for edict on rune {}", self.tx_id, edict.id
+                "No eligible outputs for edict on rune {} {}", edict.id, self.location
             );
             results.extend(move_rune_balance_to_output(
-                self.network,
-                &self.block_hash,
-                self.block_height,
-                &self.tx_id,
-                self.tx_index,
-                self.timestamp,
+                &self.location,
                 None, // This will force a burn.
                 &rune_id,
                 available_inputs,
@@ -331,12 +316,7 @@ impl TransactionCache {
                                 remainder -= 1;
                             }
                             results.extend(move_rune_balance_to_output(
-                                self.network,
-                                &self.block_hash,
-                                self.block_height,
-                                &self.tx_id,
-                                self.tx_index,
-                                self.timestamp,
+                                &self.location,
                                 Some(output),
                                 &rune_id,
                                 available_inputs,
@@ -351,12 +331,7 @@ impl TransactionCache {
                         for output in output_keys {
                             let amount = edict.amount.min(unallocated);
                             results.extend(move_rune_balance_to_output(
-                                self.network,
-                                &self.block_hash,
-                                self.block_height,
-                                &self.tx_id,
-                                self.tx_index,
-                                self.timestamp,
+                                &self.location,
                                 Some(output),
                                 &rune_id,
                                 available_inputs,
@@ -375,12 +350,7 @@ impl TransactionCache {
                         amount = unallocated;
                     }
                     results.extend(move_rune_balance_to_output(
-                        self.network,
-                        &self.block_hash,
-                        self.block_height,
-                        &self.tx_id,
-                        self.tx_index,
-                        self.timestamp,
+                        &self.location,
                         Some(edict.output),
                         &rune_id,
                         available_inputs,
@@ -393,10 +363,10 @@ impl TransactionCache {
                 _ => {
                     warn!(
                         ctx.expect_logger(),
-                        "{}: edict for rune {} attempted move to nonexistent output {}",
-                        self.tx_id,
+                        "Edict for {} attempted move to nonexistent output {} {}",
                         edict.id,
-                        edict.output
+                        edict.output,
+                        self.location
                     );
                     // TODO: Burn
                 }
@@ -417,32 +387,28 @@ impl TransactionCache {
 }
 
 fn new_ledger_entry(
+    location: &TransactionLocation,
     amount: u128,
     rune_id: RuneId,
-    block_hash: &String,
-    block_height: u64,
-    tx_index: u32,
-    tx_id: &String,
     output: Option<u32>,
     address: Option<&String>,
     receiver_address: Option<&String>,
     operation: DbLedgerOperation,
-    timestamp: u32,
     next_event_index: &mut u32,
 ) -> DbLedgerEntry {
     let entry = DbLedgerEntry::from_values(
         amount,
         rune_id,
-        block_hash,
-        block_height,
-        tx_index,
+        &location.block_hash,
+        location.block_height,
+        location.tx_index,
         *next_event_index,
-        tx_id,
+        &location.tx_id,
         output,
         address,
         receiver_address,
         operation,
-        timestamp,
+        location.timestamp,
     );
     *next_event_index += 1;
     entry
@@ -452,12 +418,7 @@ fn new_ledger_entry(
 /// Modifies `available_inputs` to consume balance that is already moved. If `amount` is zero, all remaining balances will be
 /// transferred. If `output` is `None`, the runes will be burnt.
 fn move_rune_balance_to_output(
-    network: Network,
-    block_hash: &String,
-    block_height: u64,
-    tx_id: &String,
-    tx_index: u32,
-    timestamp: u32,
+    location: &TransactionLocation,
     output: Option<u32>,
     rune_id: &RuneId,
     available_inputs: &mut VecDeque<InputRuneBalance>,
@@ -470,12 +431,12 @@ fn move_rune_balance_to_output(
     // Who is this balance going to?
     let receiver_address = if let Some(output) = output {
         match eligible_outputs.get(&output) {
-            Some(script) => match Address::from_script(script, network) {
+            Some(script) => match Address::from_script(script, location.network) {
                 Ok(address) => Some(address.to_string()),
                 Err(e) => {
                     warn!(
                         ctx.expect_logger(),
-                        "{}: unable to decode address for output {}, {}", tx_id, output, e
+                        "Unable to decode address for output {}, {} {}", output, e, location
                     );
                     None
                 }
@@ -483,7 +444,7 @@ fn move_rune_balance_to_output(
             None => {
                 warn!(
                     ctx.expect_logger(),
-                    "{}: attempted move to non-eligible output {}", tx_id, output
+                    "Attempted move to non-eligible output {} {}", output, location
                 );
                 None
             }
@@ -511,18 +472,14 @@ fn move_rune_balance_to_output(
         // Empty sender address means this balance was minted or premined, so we have no "send" entry to add.
         if let Some(sender_address) = input_bal.address.clone() {
             results.push(new_ledger_entry(
+                location,
                 balance_taken,
                 *rune_id,
-                block_hash,
-                block_height,
-                tx_index,
-                tx_id,
                 output,
                 Some(&sender_address),
                 // Depending on the logic above, this might be a normal "send" or a "burn" if the target output was not found.
                 receiver_address.as_ref(),
                 operation.clone(),
-                timestamp,
                 next_event_index,
             ));
         }
@@ -542,17 +499,13 @@ fn move_rune_balance_to_output(
     // Add the "receive" entry, if applicable.
     if receiver_address.is_some() && total_sent > 0 {
         results.push(new_ledger_entry(
+            location,
             total_sent,
             *rune_id,
-            block_hash,
-            block_height,
-            tx_index,
-            &tx_id,
             output,
             receiver_address.as_ref(),
             None,
             DbLedgerOperation::Receive,
-            timestamp,
             next_event_index,
         ));
     }

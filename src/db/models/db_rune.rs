@@ -1,9 +1,12 @@
 use ordinals::{Etching, Rune, RuneId, SpacedRune};
 use tokio_postgres::Row;
 
-use crate::db::types::{
-    pg_bigint_u32::PgBigIntU32, pg_numeric_u128::PgNumericU128, pg_numeric_u64::PgNumericU64,
-    pg_smallint_u8::PgSmallIntU8,
+use crate::db::{
+    cache::transaction_cache::TransactionLocation,
+    types::{
+        pg_bigint_u32::PgBigIntU32, pg_numeric_u128::PgNumericU128, pg_numeric_u64::PgNumericU64,
+        pg_smallint_u8::PgSmallIntU8,
+    },
 };
 
 /// A row in the `runes` table.
@@ -36,18 +39,10 @@ pub struct DbRune {
 }
 
 impl DbRune {
-    pub fn from_etching(
-        etching: &Etching,
-        number: u32,
-        block_hash: &String,
-        block_height: u64,
-        tx_index: u32,
-        tx_id: &String,
-        timestamp: u32,
-    ) -> Self {
+    pub fn from_etching(etching: &Etching, number: u32, location: &TransactionLocation) -> Self {
         let rune = etching
             .rune
-            .unwrap_or(Rune::reserved(block_height, tx_index));
+            .unwrap_or(Rune::reserved(location.block_height, location.tx_index));
         let spaced_name = if let Some(spacers) = etching.spacers {
             let spaced_rune = SpacedRune::new(rune, spacers);
             spaced_rune.to_string()
@@ -70,14 +65,14 @@ impl DbRune {
             terms_offset_end = terms.offset.1.map(|i| PgNumericU64(i));
         }
         DbRune {
-            id: format!("{}:{}", block_height, tx_index),
+            id: format!("{}:{}", location.block_height, location.tx_index),
             number: PgBigIntU32(number),
             name,
             spaced_name,
-            block_hash: block_hash[2..].to_string(),
-            block_height: PgNumericU64(block_height),
-            tx_index: PgBigIntU32(tx_index),
-            tx_id: tx_id[2..].to_string(),
+            block_hash: location.block_hash[2..].to_string(),
+            block_height: PgNumericU64(location.block_height),
+            tx_index: PgBigIntU32(location.tx_index),
+            tx_id: location.tx_id[2..].to_string(),
             divisibility: etching
                 .divisibility
                 .map(|i| PgSmallIntU8(i))
@@ -102,28 +97,20 @@ impl DbRune {
             burned: PgNumericU128(0),
             total_burns: PgBigIntU32(0),
             total_operations: PgBigIntU32(0),
-            timestamp: PgBigIntU32(timestamp),
+            timestamp: PgBigIntU32(location.timestamp),
         }
     }
 
-    pub fn from_cenotaph_etching(
-        rune: &Rune,
-        number: u32,
-        block_hash: &String,
-        block_height: u64,
-        tx_index: u32,
-        tx_id: &String,
-        timestamp: u32,
-    ) -> Self {
+    pub fn from_cenotaph_etching(rune: &Rune, number: u32, location: &TransactionLocation) -> Self {
         DbRune {
-            id: format!("{}:{}", block_height, tx_index),
+            id: format!("{}:{}", location.block_height, location.tx_index),
             name: rune.to_string(),
             spaced_name: rune.to_string(),
             number: PgBigIntU32(number),
-            block_hash: block_hash[2..].to_string(),
-            block_height: PgNumericU64(block_height),
-            tx_index: PgBigIntU32(tx_index),
-            tx_id: tx_id[2..].to_string(),
+            block_hash: location.block_hash[2..].to_string(),
+            block_height: PgNumericU64(location.block_height),
+            tx_index: PgBigIntU32(location.tx_index),
+            tx_id: location.tx_id[2..].to_string(),
             divisibility: PgSmallIntU8(0),
             premine: PgNumericU128(0),
             symbol: "".to_string(),
@@ -139,7 +126,7 @@ impl DbRune {
             burned: PgNumericU128(0),
             total_burns: PgBigIntU32(0),
             total_operations: PgBigIntU32(0),
-            timestamp: PgBigIntU32(timestamp),
+            timestamp: PgBigIntU32(location.timestamp),
         }
     }
 
@@ -186,6 +173,8 @@ mod test {
 
     use ordinals::{Etching, SpacedRune, Terms};
 
+    use crate::db::cache::transaction_cache::TransactionLocation;
+
     use super::DbRune;
 
     #[test]
@@ -207,11 +196,16 @@ mod test {
                 turbo: false,
             },
             0,
-            &"00000000000000000000d2845e9e48d356e89fd3b2e1f3da668ffc04c7dfe298".to_string(),
-            1,
-            0,
-            &"14e87956a6bb0f50df1515e85f1dcc4625a7e2ebeb08ab6db7d9211c7cf64fa3".to_string(),
-            0,
+            &TransactionLocation {
+                network: bitcoin::Network::Bitcoin,
+                block_hash: "00000000000000000000d2845e9e48d356e89fd3b2e1f3da668ffc04c7dfe298"
+                    .to_string(),
+                block_height: 1,
+                tx_index: 0,
+                tx_id: "14e87956a6bb0f50df1515e85f1dcc4625a7e2ebeb08ab6db7d9211c7cf64fa3"
+                    .to_string(),
+                timestamp: 0,
+            },
         );
         assert!(db_rune.name == "UNCOMMONGOODS");
         assert!(db_rune.spaced_name == "UNCOMMON•GOODS");

@@ -80,10 +80,10 @@ impl IndexCache {
         for entry in entries.iter() {
             debug!(
                 ctx.expect_logger(),
-                "Assign unallocated {} {} at block {}",
-                entry.rune_id.clone(),
+                "Assign unallocated {} {} {}",
+                entry.rune_id,
                 entry.amount.0,
-                entry.block_height.0
+                self.tx_cache.location
             );
         }
         self.add_ledger_entries_to_db_cache(&entries);
@@ -97,13 +97,7 @@ impl IndexCache {
         db_tx: &mut Transaction<'_>,
         ctx: &Context,
     ) {
-        debug!(
-            ctx.expect_logger(),
-            "Runestone in tx {} ({}) at block {}",
-            self.tx_cache.tx_id,
-            self.tx_cache.tx_index,
-            self.tx_cache.block_height
-        );
+        debug!(ctx.expect_logger(), "Runestone {}", self.tx_cache.location);
         self.scan_tx_input_rune_balance(tx_inputs, db_tx, ctx).await;
         self.tx_cache
             .apply_runestone_pointer(runestone, tx_outputs, ctx);
@@ -116,13 +110,7 @@ impl IndexCache {
         db_tx: &mut Transaction<'_>,
         ctx: &Context,
     ) {
-        debug!(
-            ctx.expect_logger(),
-            "Cenotaph in tx {} ({}) at block {}",
-            self.tx_cache.tx_id,
-            self.tx_cache.tx_index,
-            self.tx_cache.block_height
-        );
+        debug!(ctx.expect_logger(), "Cenotaph {}", self.tx_cache.location);
         self.scan_tx_input_rune_balance(tx_inputs, db_tx, ctx).await;
         let entries = self.tx_cache.apply_cenotaph_input_burn(cenotaph);
         self.add_ledger_entries_to_db_cache(&entries);
@@ -137,9 +125,7 @@ impl IndexCache {
         let (rune_id, db_rune) = self.tx_cache.apply_etching(etching, self.next_rune_number);
         info!(
             ctx.expect_logger(),
-            "Etching {} at block {}",
-            db_rune.spaced_name.clone(),
-            db_rune.block_height.0
+            "Etching {} ({}) {}", db_rune.spaced_name, db_rune.id, self.tx_cache.location
         );
         self.db_cache.runes.push(db_rune.clone());
         self.rune_cache.put(rune_id, db_rune);
@@ -157,9 +143,7 @@ impl IndexCache {
             .apply_cenotaph_etching(rune, self.next_rune_number);
         info!(
             ctx.expect_logger(),
-            "Etching cenotaph {} at block {}",
-            db_rune.spaced_name.clone(),
-            db_rune.block_height.0
+            "Etching cenotaph {} ({}) {}", db_rune.spaced_name, db_rune.id, self.tx_cache.location
         );
         self.db_cache.runes.push(db_rune.clone());
         self.rune_cache.put(rune_id, db_rune);
@@ -175,17 +159,14 @@ impl IndexCache {
         let Some(db_rune) = self.get_cached_rune_by_rune_id(rune_id, db_tx, ctx).await else {
             warn!(
                 ctx.expect_logger(),
-                "{}: rune {} not found for mint", self.tx_cache.tx_id, rune_id
+                "Rune {} not found for mint {}", rune_id, self.tx_cache.location
             );
             return;
         };
         let ledger_entry = self.tx_cache.apply_mint(&rune_id, &db_rune);
         info!(
             ctx.expect_logger(),
-            "Mint {} {} at block {}",
-            db_rune.spaced_name.clone(),
-            ledger_entry.amount.0,
-            ledger_entry.block_height.0
+            "Mint {} {} {}", db_rune.spaced_name, ledger_entry.amount.0, self.tx_cache.location
         );
         self.add_ledger_entries_to_db_cache(&vec![ledger_entry]);
     }
@@ -199,17 +180,17 @@ impl IndexCache {
         let Some(db_rune) = self.get_cached_rune_by_rune_id(rune_id, db_tx, ctx).await else {
             warn!(
                 ctx.expect_logger(),
-                "{}: rune {} not found for cenotaph mint", self.tx_cache.tx_id, rune_id
+                "Rune {} not found for cenotaph mint {}", rune_id, self.tx_cache.location
             );
             return;
         };
         let ledger_entry = self.tx_cache.apply_cenotaph_mint(&rune_id, &db_rune);
         info!(
             ctx.expect_logger(),
-            "Mint cenotaph {} {} at block {}",
-            db_rune.spaced_name.clone(),
+            "Mint cenotaph {} {} {}",
+            db_rune.spaced_name,
             ledger_entry.amount.0,
-            ledger_entry.block_height.0
+            self.tx_cache.location
         );
         self.add_ledger_entries_to_db_cache(&vec![ledger_entry]);
     }
@@ -218,7 +199,7 @@ impl IndexCache {
         let Some(db_rune) = self.get_cached_rune_by_rune_id(&edict.id, db_tx, ctx).await else {
             warn!(
                 ctx.expect_logger(),
-                "{}: rune {} not found for edict", self.tx_cache.tx_id, edict.id
+                "Rune {} not found for edict {}", edict.id, self.tx_cache.location
             );
             return;
         };
@@ -226,10 +207,7 @@ impl IndexCache {
         for entry in entries.iter() {
             info!(
                 ctx.expect_logger(),
-                "Edict {} {} at block {}",
-                db_rune.spaced_name.clone(),
-                entry.amount.0,
-                entry.block_height.0
+                "Edict {} {} {}", db_rune.spaced_name, entry.amount.0, self.tx_cache.location
             );
         }
         self.add_ledger_entries_to_db_cache(&entries);
