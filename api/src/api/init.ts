@@ -6,6 +6,7 @@ import FastifyMetrics, { IFastifyMetrics } from 'fastify-metrics';
 import { Server } from 'http';
 import { PgStore } from '../pg/pg-store';
 import { EtchingRoutes } from './routes/etchings';
+import { AddressRoutes } from './routes/address';
 
 export const Api: FastifyPluginAsync<
   Record<never, never>,
@@ -13,6 +14,7 @@ export const Api: FastifyPluginAsync<
   TypeBoxTypeProvider
 > = async fastify => {
   await fastify.register(EtchingRoutes);
+  await fastify.register(AddressRoutes);
 };
 
 export async function buildApiServer(args: { db: PgStore }) {

@@ -59,6 +59,9 @@ export const RuneSpacedNameSchemaCType = TypeCompiler.Compile(RuneSpacedNameSche
 export const EtchingParamSchema = Type.Union([RuneIdSchema, RuneNameSchema, RuneSpacedNameSchema]);
 export type EtchingParam = Static<typeof EtchingParamSchema>;
 
+export const AddressParamSchema = Type.String();
+export type AddressParam = Static<typeof AddressParamSchema>;
+
 // ==========================
 // Responses
 // ==========================
@@ -105,13 +108,14 @@ export const EtchingResponseSchema = Type.Object({
 export type EtchingResponse = Static<typeof EtchingResponseSchema>;
 
 const RuneDetailResponseSchema = Type.Object({
-  id: Type.String({ examples: ['840000:1'] }),
-  name: Type.String({ examples: ['ZZZZZFEHUZZZZZ'] }),
-  spaced_name: Type.String({ examples: ['Z•Z•Z•Z•Z•FEHU•Z•Z•Z•Z•Z'] }),
+  rune: Type.Object({
+    id: Type.String({ examples: ['840000:1'] }),
+    name: Type.String({ examples: ['ZZZZZFEHUZZZZZ'] }),
+    spaced_name: Type.String({ examples: ['Z•Z•Z•Z•Z•FEHU•Z•Z•Z•Z•Z'] }),
+  }),
 });
 
-export const EtchingActivityResponseSchema = Type.Object({
-  rune: RuneDetailResponseSchema,
+export const SimpleActivityResponseSchema = Type.Object({
   block_height: Type.Integer({ examples: [840000] }),
   tx_index: Type.Integer({ examples: [1] }),
   tx_id: Type.String({
@@ -134,13 +138,24 @@ export const EtchingActivityResponseSchema = Type.Object({
   ]),
   timestamp: Type.Integer({ examples: [1713571767] }),
 });
-export type EtchingActivityResponse = Static<typeof EtchingActivityResponseSchema>;
+export type SimpleActivityResponse = Static<typeof SimpleActivityResponseSchema>;
 
-export const BalanceResponseSchema = Type.Object({
-  rune: RuneDetailResponseSchema,
+export const ActivityResponseSchema = Type.Intersect([
+  RuneDetailResponseSchema,
+  SimpleActivityResponseSchema,
+]);
+export type ActivityResponse = Static<typeof ActivityResponseSchema>;
+
+export const SimpleBalanceResponseSchema = Type.Object({
   address: Type.Optional(Type.String({ examples: ['bc1q7jd477wc5s88hsvenr0ddtatsw282hfjzg59wz'] })),
   balance: Type.String({ examples: ['11000000000'] }),
 });
+export type SimpleBalanceResponse = Static<typeof SimpleBalanceResponseSchema>;
+
+export const BalanceResponseSchema = Type.Intersect([
+  RuneDetailResponseSchema,
+  SimpleBalanceResponseSchema,
+]);
 export type BalanceResponse = Static<typeof BalanceResponseSchema>;
 
 export const NotFoundResponse = Type.Object(

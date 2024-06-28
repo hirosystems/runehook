@@ -4,14 +4,15 @@ import { Value } from '@sinclair/typebox/value';
 import { FastifyPluginCallback } from 'fastify';
 import { Server } from 'http';
 import {
-  BalanceResponseSchema,
-  EtchingActivityResponseSchema,
+  AddressParamSchema,
   EtchingParamSchema,
   EtchingResponseSchema,
   LimitParamSchema,
   NotFoundResponse,
   OffsetParamSchema,
   PaginatedResponse,
+  SimpleBalanceResponseSchema,
+  SimpleActivityResponseSchema,
 } from '../schemas';
 import {
   parseBalanceResponse,
@@ -87,8 +88,8 @@ export const EtchingRoutes: FastifyPluginCallback<
     '/etchings/:etching/activity',
     {
       schema: {
-        operationId: 'getEtchingActivity',
-        summary: 'Rune etching activity',
+        operationId: 'getRuneActivity',
+        summary: 'Rune rune activity',
         description: 'Retrieves all activity for a Rune',
         tags: ['Runes'],
         params: Type.Object({
@@ -99,14 +100,53 @@ export const EtchingRoutes: FastifyPluginCallback<
           limit: Type.Optional(LimitParamSchema),
         }),
         response: {
-          200: PaginatedResponse(EtchingActivityResponseSchema, 'Paginated etchings response'),
+          200: PaginatedResponse(SimpleActivityResponseSchema, 'Paginated activity response'),
         },
       },
     },
     async (request, reply) => {
       const offset = request.query.offset ?? 0;
       const limit = request.query.limit ?? 20;
-      const results = await fastify.db.getEtchingActivity(request.params.etching, offset, limit);
+      const results = await fastify.db.getRuneActivity(request.params.etching, offset, limit);
+      await reply.send({
+        limit,
+        offset,
+        total: results.total,
+        results: results.results.map(r => parseEtchingActivityResponse(r)),
+      });
+    }
+  );
+
+  fastify.get(
+    '/etchings/:etching/activity/:address',
+    {
+      schema: {
+        operationId: 'getRuneAddressActivity',
+        summary: 'Rune rune activity for address',
+        description: 'Retrieves all activity for a Rune address',
+        tags: ['Runes'],
+        params: Type.Object({
+          etching: EtchingParamSchema,
+          address: AddressParamSchema,
+        }),
+        querystring: Type.Object({
+          offset: Type.Optional(OffsetParamSchema),
+          limit: Type.Optional(LimitParamSchema),
+        }),
+        response: {
+          200: PaginatedResponse(SimpleActivityResponseSchema, 'Paginated activity response'),
+        },
+      },
+    },
+    async (request, reply) => {
+      const offset = request.query.offset ?? 0;
+      const limit = request.query.limit ?? 20;
+      const results = await fastify.db.getRuneAddressActivity(
+        request.params.etching,
+        request.params.address,
+        offset,
+        limit
+      );
       await reply.send({
         limit,
         offset,
@@ -132,7 +172,7 @@ export const EtchingRoutes: FastifyPluginCallback<
           limit: Type.Optional(LimitParamSchema),
         }),
         response: {
-          200: PaginatedResponse(BalanceResponseSchema, 'Paginated holders response'),
+          200: PaginatedResponse(SimpleBalanceResponseSchema, 'Paginated holders response'),
         },
       },
     },
@@ -146,6 +186,37 @@ export const EtchingRoutes: FastifyPluginCallback<
         total: results.total,
         results: results.results.map(r => parseBalanceResponse(r)),
       });
+    }
+  );
+
+  fastify.get(
+    '/etchings/:etching/holders/:address',
+    {
+      schema: {
+        operationId: 'getRuneHolderBalance',
+        summary: 'Rune holder balance',
+        description: 'Retrieves holder balance for a specific Rune',
+        tags: ['Runes'],
+        params: Type.Object({
+          etching: EtchingParamSchema,
+          address: AddressParamSchema,
+        }),
+        response: {
+          404: NotFoundResponse,
+          200: SimpleBalanceResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const balance = await fastify.db.getRuneAddressBalance(
+        request.params.etching,
+        request.params.address
+      );
+      if (!balance) {
+        await reply.code(404).send(Value.Create(NotFoundResponse));
+      } else {
+        await reply.send(parseBalanceResponse(balance));
+      }
     }
   );
 
