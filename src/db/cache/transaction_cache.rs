@@ -1,6 +1,6 @@
 use std::{
     collections::{HashMap, VecDeque},
-    fmt,
+    fmt, vec,
 };
 
 use bitcoin::{Address, Network, ScriptBuf};
@@ -100,7 +100,16 @@ impl TransactionCache {
     pub fn set_input_rune_balances(
         &mut self,
         input_runes: HashMap<RuneId, VecDeque<InputRuneBalance>>,
+        ctx: &Context,
     ) {
+        for (rune_id, vec) in input_runes.iter() {
+            for input in vec.iter() {
+                debug!(
+                    ctx.expect_logger(),
+                    "Input {} {:?} ({}) {}", rune_id, input.address, input.amount, self.location
+                );
+            }
+        }
         self.input_runes = input_runes;
     }
 
@@ -171,13 +180,23 @@ impl TransactionCache {
     pub fn allocate_remaining_balances(&mut self, ctx: &Context) -> Vec<DbLedgerEntry> {
         let mut results = vec![];
         for (rune_id, unallocated) in self.input_runes.iter_mut() {
+            for input in unallocated.iter() {
+                debug!(
+                    ctx.expect_logger(),
+                    "Assign unallocated {} {:?} ({}) {}",
+                    rune_id,
+                    input.address,
+                    input.amount,
+                    self.location
+                );
+            }
             results.extend(move_rune_balance_to_output(
                 &self.location,
                 self.pointer,
                 rune_id,
                 unallocated,
                 &self.eligible_outputs,
-                0,
+                0, // All of it
                 &mut self.next_event_index,
                 ctx,
             ));
@@ -211,9 +230,18 @@ impl TransactionCache {
         (rune_id, db_rune)
     }
 
-    pub fn apply_mint(&mut self, rune_id: &RuneId, db_rune: &DbRune) -> DbLedgerEntry {
+    pub fn apply_mint(
+        &mut self,
+        rune_id: &RuneId,
+        db_rune: &DbRune,
+        ctx: &Context,
+    ) -> DbLedgerEntry {
         // TODO: What's the default mint amount if none was provided?
         let mint_amount = db_rune.terms_amount.unwrap_or(PgNumericU128(0));
+        info!(
+            ctx.expect_logger(),
+            "MINT {} ({}) {} {}", rune_id, db_rune.spaced_name, mint_amount.0, self.location
+        );
         self.add_input_runes(
             rune_id,
             InputRuneBalance {
@@ -233,9 +261,18 @@ impl TransactionCache {
         )
     }
 
-    pub fn apply_cenotaph_mint(&mut self, rune_id: &RuneId, db_rune: &DbRune) -> DbLedgerEntry {
+    pub fn apply_cenotaph_mint(
+        &mut self,
+        rune_id: &RuneId,
+        db_rune: &DbRune,
+        ctx: &Context,
+    ) -> DbLedgerEntry {
         // TODO: What's the default mint amount if none was provided?
         let mint_amount = db_rune.terms_amount.unwrap_or(PgNumericU128(0));
+        info!(
+            ctx.expect_logger(),
+            "CENOTAPH MINT {} {} {}", db_rune.spaced_name, mint_amount.0, self.location
+        );
         // This entry does not go in the input runes, it gets burned immediately.
         new_ledger_entry(
             &self.location,
@@ -368,7 +405,16 @@ impl TransactionCache {
                         edict.output,
                         self.location
                     );
-                    // TODO: Burn
+                    results.extend(move_rune_balance_to_output(
+                        &self.location,
+                        None, // Burn.
+                        &rune_id,
+                        available_inputs,
+                        &self.eligible_outputs,
+                        edict.amount,
+                        &mut self.next_event_index,
+                        ctx,
+                    ));
                 }
             }
         }
@@ -457,8 +503,10 @@ fn move_rune_balance_to_output(
     } else {
         DbLedgerOperation::Burn
     };
-    // Produce the `send` ledger entries by taking balance from the available inputs until the total amount is satisfied.
+
+    // Gather balance to be received by taking it from the available inputs until the amount to move is satisfied.
     let mut total_sent = 0;
+    let mut senders = vec![];
     loop {
         let Some(input_bal) = available_inputs.pop_front() else {
             // Unallocated balance ran out.
@@ -471,17 +519,7 @@ fn move_rune_balance_to_output(
         };
         // Empty sender address means this balance was minted or premined, so we have no "send" entry to add.
         if let Some(sender_address) = input_bal.address.clone() {
-            results.push(new_ledger_entry(
-                location,
-                balance_taken,
-                *rune_id,
-                output,
-                Some(&sender_address),
-                // Depending on the logic above, this might be a normal "send" or a "burn" if the target output was not found.
-                receiver_address.as_ref(),
-                operation.clone(),
-                next_event_index,
-            ));
+            senders.push((balance_taken, sender_address));
         }
         if balance_taken < input_bal.amount {
             // There's still some balance left on this input, keep it for later.
@@ -508,6 +546,114 @@ fn move_rune_balance_to_output(
             DbLedgerOperation::Receive,
             next_event_index,
         ));
+        info!(
+            ctx.expect_logger(),
+            "{} {} ({}) {} {}",
+            DbLedgerOperation::Receive,
+            rune_id,
+            total_sent,
+            receiver_address.as_ref().unwrap(),
+            location
+        );
+    }
+    // Add the "send"/"burn" entries.
+    for (balance_taken, sender_address) in senders.iter() {
+        results.push(new_ledger_entry(
+            location,
+            *balance_taken,
+            *rune_id,
+            output,
+            Some(sender_address),
+            receiver_address.as_ref(),
+            operation.clone(),
+            next_event_index,
+        ));
+        info!(
+            ctx.expect_logger(),
+            "{} {} ({}) {} -> {:?} {}",
+            operation,
+            rune_id,
+            balance_taken,
+            sender_address,
+            receiver_address,
+            location
+        );
     }
     results
+}
+
+#[cfg(test)]
+mod test {
+    use std::collections::{HashMap, VecDeque};
+
+    use bitcoin::ScriptBuf;
+    use chainhook_sdk::utils::Context;
+    use ordinals::RuneId;
+
+    use crate::db::models::db_ledger_operation::DbLedgerOperation;
+
+    use super::{move_rune_balance_to_output, InputRuneBalance, TransactionLocation};
+
+    #[test]
+    fn receives_are_registered_first() {
+        let logger = hiro_system_kit::log::setup_logger();
+        let _guard = hiro_system_kit::log::setup_global_logger(logger.clone());
+        let ctx = Context {
+            logger: Some(logger),
+            tracer: false,
+        };
+        let location = TransactionLocation {
+            network: bitcoin::Network::Bitcoin,
+            block_hash: "00000000000000000002c0cc73626b56fb3ee1ce605b0ce125cc4fb58775a0a9"
+                .to_string(),
+            block_height: 840002,
+            timestamp: 0,
+            tx_id: "37cd29676d626492cd9f20c60bc4f20347af9c0d91b5689ed75c05bb3e2f73ef".to_string(),
+            tx_index: 2936,
+        };
+        let mut available_inputs = VecDeque::new();
+        // An input from a previous tx
+        available_inputs.push_back(InputRuneBalance {
+            address: Some(
+                "bc1p8zxlhgdsq6dmkzk4ammzcx55c3hfrg69ftx0gzlnfwq0wh38prds0nzqwf".to_string(),
+            ),
+            amount: 1000,
+        });
+        // A mint
+        available_inputs.push_back(InputRuneBalance {
+            address: None,
+            amount: 1000,
+        });
+        let mut eligible_outputs = HashMap::new();
+        eligible_outputs.insert(
+            0u32,
+            ScriptBuf::from_hex(
+                "5120388dfba1b0069bbb0ad5eef62c1a94c46e91a3454accf40bf34b80f75e2708db",
+            )
+            .unwrap(),
+        );
+        let mut next_event_index = 0;
+        let results = move_rune_balance_to_output(
+            &location,
+            Some(0),
+            &RuneId::new(840000, 25).unwrap(),
+            &mut available_inputs,
+            &eligible_outputs,
+            0,
+            &mut next_event_index,
+            &ctx,
+        );
+
+        let receive = results.get(0).unwrap();
+        assert_eq!(receive.event_index.0, 0u32);
+        assert_eq!(receive.operation, DbLedgerOperation::Receive);
+        assert_eq!(receive.amount.0, 2000u128);
+
+        let send = results.get(1).unwrap();
+        assert_eq!(send.event_index.0, 1u32);
+        assert_eq!(send.operation, DbLedgerOperation::Send);
+        assert_eq!(send.amount.0, 1000u128);
+
+        assert_eq!(results.len(), 2);
+    }
 }

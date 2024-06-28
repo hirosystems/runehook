@@ -1,4 +1,4 @@
-use std::error::Error;
+use std::{error::Error, fmt};
 
 use bytes::BytesMut;
 use tokio_postgres::types::{to_sql_checked, FromSql, IsNull, ToSql, Type};
@@ -10,6 +10,12 @@ pub enum DbLedgerOperation {
     Burn,
     Send,
     Receive,
+}
+
+impl fmt::Display for DbLedgerOperation {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.as_str().to_uppercase())
+    }
 }
 
 impl DbLedgerOperation {

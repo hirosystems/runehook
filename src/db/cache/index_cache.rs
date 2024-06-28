@@ -77,15 +77,6 @@ impl IndexCache {
     /// Finalizes the current transaction index cache.
     pub fn end_transaction(&mut self, _db_tx: &mut Transaction<'_>, ctx: &Context) {
         let entries = self.tx_cache.allocate_remaining_balances(ctx);
-        for entry in entries.iter() {
-            debug!(
-                ctx.expect_logger(),
-                "Assign unallocated {} {} {}",
-                entry.rune_id,
-                entry.amount.0,
-                self.tx_cache.location
-            );
-        }
         self.add_ledger_entries_to_db_cache(&entries);
     }
 
@@ -163,11 +154,7 @@ impl IndexCache {
             );
             return;
         };
-        let ledger_entry = self.tx_cache.apply_mint(&rune_id, &db_rune);
-        info!(
-            ctx.expect_logger(),
-            "Mint {} {} {}", db_rune.spaced_name, ledger_entry.amount.0, self.tx_cache.location
-        );
+        let ledger_entry = self.tx_cache.apply_mint(&rune_id, &db_rune, ctx);
         self.add_ledger_entries_to_db_cache(&vec![ledger_entry]);
     }
 
@@ -184,14 +171,7 @@ impl IndexCache {
             );
             return;
         };
-        let ledger_entry = self.tx_cache.apply_cenotaph_mint(&rune_id, &db_rune);
-        info!(
-            ctx.expect_logger(),
-            "Mint cenotaph {} {} {}",
-            db_rune.spaced_name,
-            ledger_entry.amount.0,
-            self.tx_cache.location
-        );
+        let ledger_entry = self.tx_cache.apply_cenotaph_mint(&rune_id, &db_rune, ctx);
         self.add_ledger_entries_to_db_cache(&vec![ledger_entry]);
     }
 
@@ -278,7 +258,8 @@ impl IndexCache {
             }
         }
 
-        self.tx_cache.set_input_rune_balances(final_input_runes);
+        self.tx_cache
+            .set_input_rune_balances(final_input_runes, ctx);
     }
 
     /// Take ledger entries returned by the `TransactionCache` and add them to the `DbCache`. Update global balances and counters
