@@ -7,9 +7,12 @@
     "build": "rimraf ./dist && tsc --project tsconfig.build.json",
     "start": "node dist/src/index.js",
     "start-ts": "ts-node ./src/index.ts",
-    "generate:git-info": "rimraf .git-info && node_modules/.bin/api-toolkit-git-info"
+    "test": "jest --runInBand",
+    "generate:git-info": "rimraf .git-info && node_modules/.bin/api-toolkit-git-info",
+    "lint:eslint": "eslint . --ext .ts,.tsx -f unix",
+    "lint:prettier": "prettier --check src/**/*.ts tests/**/*.ts",
+    "lint:unused-exports": "ts-unused-exports tsconfig.json --showLineNumber --excludePathsFromReport=util/*"
   },
-  "keywords": [],
   "author": "Hiro Systems PBC <engineering@hiro.so> (https://hiro.so)",
   "license": "Apache 2.0",
   "prettier": "@stacks/prettier-config",

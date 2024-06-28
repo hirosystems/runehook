@@ -72,7 +72,8 @@ impl DbCache {
                 true,
                 db_tx,
                 ctx,
-            ).await;
+            )
+            .await;
             self.balance_increases.clear();
         }
         if self.balance_deductions.len() > 0 {
@@ -86,7 +87,8 @@ impl DbCache {
                 false,
                 db_tx,
                 ctx,
-            ).await;
+            )
+            .await;
             self.balance_deductions.clear();
         }
     }

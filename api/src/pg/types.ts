@@ -31,7 +31,7 @@ export type DbRune = {
   timestamp: number;
 };
 
-export type DbLedgerOperation = 'mint' | 'burn' | 'send' | 'receive';
+type DbLedgerOperation = 'mint' | 'burn' | 'send' | 'receive';
 
 export type DbLedgerEntry = {
   rune_id: string;

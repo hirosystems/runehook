@@ -1,6 +1,7 @@
 use std::{
     error::Error,
-    io::{Cursor, Read}, ops::{Add, AddAssign},
+    io::{Cursor, Read},
+    ops::{Add, AddAssign},
 };
 
 use bytes::{BufMut, BytesMut};
@@ -103,7 +104,8 @@ impl AddAssign for PgNumericU128 {
 #[cfg(test)]
 mod test {
     use test_case::test_case;
-    use tokio_postgres::NoTls;
+
+    use crate::db::pg_test_client;
 
     use super::PgNumericU128;
 
@@ -112,15 +114,7 @@ mod test {
     #[test_case(0; "zero")]
     #[tokio::test]
     async fn test_u128_to_postgres(val: u128) {
-        let (mut client, connection) =
-            tokio_postgres::connect("host=localhost user=postgres", NoTls)
-                .await
-                .unwrap();
-        tokio::spawn(async move {
-            if let Err(e) = connection.await {
-                eprintln!("connection error: {}", e);
-            }
-        });
+        let mut client = pg_test_client().await;
         let value = PgNumericU128(val);
         let tx = client.transaction().await.unwrap();
         let _ = tx.query("CREATE TABLE test (value NUMERIC)", &[]).await;

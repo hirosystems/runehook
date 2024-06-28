@@ -79,6 +79,19 @@ pub async fn pg_connect(config: &Config, run_migrations: bool, ctx: &Context) ->
     pg_client
 }
 
+pub async fn pg_test_client() -> Client {
+    let (client, connection) =
+        tokio_postgres::connect("host=localhost user=postgres password=postgres", NoTls)
+            .await
+            .unwrap();
+    tokio::spawn(async move {
+        if let Err(e) = connection.await {
+            eprintln!("test connection error: {}", e);
+        }
+    });
+    client
+}
+
 pub async fn pg_insert_rune_rows(
     rows: &Vec<DbRune>,
     db_tx: &mut Transaction<'_>,
