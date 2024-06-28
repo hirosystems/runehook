@@ -10,7 +10,6 @@ import {
   LimitParamSchema,
   NotFoundResponse,
   OffsetParamSchema,
-  PaginatedResponse,
   SimpleBalanceResponseSchema,
   SimpleActivityResponseSchema,
 } from '../schemas';
@@ -19,13 +18,15 @@ import {
   parseEtchingActivityResponse,
   parseEtchingResponse,
 } from '../util/helpers';
+import { Optional, PaginatedResponse } from '@hirosystems/api-toolkit';
+import { handleCache } from '../util/cache';
 
 export const EtchingRoutes: FastifyPluginCallback<
   Record<never, never>,
   Server,
   TypeBoxTypeProvider
 > = (fastify, options, done) => {
-  // fastify.addHook('preHandler', handleInscriptionTransfersCache);
+  fastify.addHook('preHandler', handleCache);
 
   fastify.get(
     '/etchings',
@@ -36,8 +37,8 @@ export const EtchingRoutes: FastifyPluginCallback<
         description: 'Retrieves a paginated list of rune etchings',
         tags: ['Runes'],
         querystring: Type.Object({
-          offset: Type.Optional(OffsetParamSchema),
-          limit: Type.Optional(LimitParamSchema),
+          offset: Optional(OffsetParamSchema),
+          limit: Optional(LimitParamSchema),
         }),
         response: {
           200: PaginatedResponse(EtchingResponseSchema, 'Paginated etchings response'),
@@ -96,8 +97,8 @@ export const EtchingRoutes: FastifyPluginCallback<
           etching: EtchingParamSchema,
         }),
         querystring: Type.Object({
-          offset: Type.Optional(OffsetParamSchema),
-          limit: Type.Optional(LimitParamSchema),
+          offset: Optional(OffsetParamSchema),
+          limit: Optional(LimitParamSchema),
         }),
         response: {
           200: PaginatedResponse(SimpleActivityResponseSchema, 'Paginated activity response'),
@@ -130,8 +131,8 @@ export const EtchingRoutes: FastifyPluginCallback<
           address: AddressParamSchema,
         }),
         querystring: Type.Object({
-          offset: Type.Optional(OffsetParamSchema),
-          limit: Type.Optional(LimitParamSchema),
+          offset: Optional(OffsetParamSchema),
+          limit: Optional(LimitParamSchema),
         }),
         response: {
           200: PaginatedResponse(SimpleActivityResponseSchema, 'Paginated activity response'),
@@ -168,8 +169,8 @@ export const EtchingRoutes: FastifyPluginCallback<
           etching: EtchingParamSchema,
         }),
         querystring: Type.Object({
-          offset: Type.Optional(OffsetParamSchema),
-          limit: Type.Optional(LimitParamSchema),
+          offset: Optional(OffsetParamSchema),
+          limit: Optional(LimitParamSchema),
         }),
         response: {
           200: PaginatedResponse(SimpleBalanceResponseSchema, 'Paginated holders response'),

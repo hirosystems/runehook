@@ -60,6 +60,13 @@ export class PgStore extends BasePgStore {
     super(sql);
   }
 
+  async getChainTipEtag(): Promise<string | undefined> {
+    const result = await this.sql<{ etag: string }[]>`
+      SELECT block_hash AS etag FROM ledger ORDER BY block_height DESC LIMIT 1
+    `;
+    return result[0]?.etag;
+  }
+
   async getEtching(id: EtchingParam): Promise<DbRune | undefined> {
     const result = await this.sql<DbRune[]>`
       SELECT * FROM runes WHERE ${getEtchingIdWhereCondition(this.sql, id)}

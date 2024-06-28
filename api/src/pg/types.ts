@@ -10,6 +10,7 @@ export type DbRune = {
   number: number;
   name: string;
   spaced_name: string;
+  block_hash: string;
   block_height: number;
   tx_index: number;
   tx_id: string;
@@ -35,6 +36,7 @@ type DbLedgerOperation = 'mint' | 'burn' | 'send' | 'receive';
 
 export type DbLedgerEntry = {
   rune_id: string;
+  block_hash: string;
   block_height: number;
   tx_index: number;
   tx_id: string;

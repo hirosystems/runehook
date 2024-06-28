@@ -1,5 +1,5 @@
 import { SwaggerOptions } from '@fastify/swagger';
-import { SERVER_VERSION } from '@hirosystems/api-toolkit';
+import { Nullable, Optional, SERVER_VERSION } from '@hirosystems/api-toolkit';
 import { Static, TSchema, Type } from '@sinclair/typebox';
 import { TypeCompiler } from '@sinclair/typebox/compiler';
 
@@ -28,8 +28,6 @@ export const OpenApiSchemaOptions: SwaggerOptions = {
     ],
   },
 };
-
-const Nullable = <T extends TSchema>(type: T) => Type.Union([type, Type.Null()]);
 
 // ==========================
 // Parameters
@@ -66,22 +64,14 @@ export type AddressParam = Static<typeof AddressParamSchema>;
 // Responses
 // ==========================
 
-export const PaginatedResponse = <T extends TSchema>(type: T, title: string) =>
-  Type.Object(
-    {
-      limit: Type.Integer({ examples: [20] }),
-      offset: Type.Integer({ examples: [0] }),
-      total: Type.Integer({ examples: [1] }),
-      results: Type.Array(type),
-    },
-    { title }
-  );
-
 export const EtchingResponseSchema = Type.Object({
   id: Type.String({ examples: ['840000:1'] }),
   name: Type.String({ examples: ['ZZZZZFEHUZZZZZ'] }),
   spaced_name: Type.String({ examples: ['Z•Z•Z•Z•Z•FEHU•Z•Z•Z•Z•Z'] }),
   number: Type.Integer({ examples: [1] }),
+  block_hash: Type.String({
+    examples: ['00000000000000000000c9787573a1f1775a2b56b403a2d0c7957e9a5bc754bb'],
+  }),
   block_height: Type.Integer({ examples: [840000] }),
   tx_index: Type.Integer({ examples: [1] }),
   tx_id: Type.String({
@@ -116,6 +106,9 @@ const RuneDetailResponseSchema = Type.Object({
 });
 
 export const SimpleActivityResponseSchema = Type.Object({
+  block_hash: Type.String({
+    examples: ['00000000000000000000c9787573a1f1775a2b56b403a2d0c7957e9a5bc754bb'],
+  }),
   block_height: Type.Integer({ examples: [840000] }),
   tx_index: Type.Integer({ examples: [1] }),
   tx_id: Type.String({
@@ -125,7 +118,7 @@ export const SimpleActivityResponseSchema = Type.Object({
   output: Type.String({
     examples: ['2bb85f4b004be6da54f766c17c1e855187327112c231ef2ff35ebad0ea67c69e:100'],
   }),
-  address: Type.Optional(Type.String({ examples: ['bc1q7jd477wc5s88hsvenr0ddtatsw282hfjzg59wz'] })),
+  address: Optional(Type.String({ examples: ['bc1q7jd477wc5s88hsvenr0ddtatsw282hfjzg59wz'] })),
   receiver_address: Type.Optional(
     Type.String({ examples: ['bc1pgdrveee2v4ez95szaakw5gkd8eennv2dddf9rjdrlt6ch56lzrrsxgvazt'] })
   ),
@@ -147,7 +140,7 @@ export const ActivityResponseSchema = Type.Intersect([
 export type ActivityResponse = Static<typeof ActivityResponseSchema>;
 
 export const SimpleBalanceResponseSchema = Type.Object({
-  address: Type.Optional(Type.String({ examples: ['bc1q7jd477wc5s88hsvenr0ddtatsw282hfjzg59wz'] })),
+  address: Optional(Type.String({ examples: ['bc1q7jd477wc5s88hsvenr0ddtatsw282hfjzg59wz'] })),
   balance: Type.String({ examples: ['11000000000'] }),
 });
 export type SimpleBalanceResponse = Static<typeof SimpleBalanceResponseSchema>;

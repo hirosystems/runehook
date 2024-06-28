@@ -2,6 +2,7 @@ CREATE TYPE ledger_operation AS ENUM ('mint', 'burn', 'send', 'receive');
 
 CREATE TABLE IF NOT EXISTS ledger (
     rune_id                 TEXT NOT NULL,
+    block_hash              TEXT NOT NULL,
     block_height            NUMERIC NOT NULL,
     tx_index                BIGINT NOT NULL,
     event_index             BIGINT NOT NULL,

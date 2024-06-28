@@ -22,6 +22,7 @@ pub struct InputRuneBalance {
 /// Holds cached data relevant to a single transaction during indexing.
 pub struct TransactionCache {
     network: Network,
+    pub block_hash: String,
     pub block_height: u64,
     pub tx_index: u32,
     pub tx_id: String,
@@ -44,6 +45,7 @@ pub struct TransactionCache {
 impl TransactionCache {
     pub fn new(
         network: Network,
+        block_hash: &String,
         block_height: u64,
         tx_index: u32,
         tx_id: &String,
@@ -51,6 +53,7 @@ impl TransactionCache {
     ) -> Self {
         TransactionCache {
             network,
+            block_hash: block_hash.clone(),
             block_height,
             tx_index,
             next_event_index: 0,
@@ -121,6 +124,7 @@ impl TransactionCache {
                 results.push(new_ledger_entry(
                     balance.amount,
                     *rune_id,
+                    &self.block_hash,
                     self.block_height,
                     self.tx_index,
                     &self.tx_id,
@@ -144,6 +148,7 @@ impl TransactionCache {
         for (rune_id, unallocated) in self.input_runes.iter_mut() {
             results.extend(move_rune_balance_to_output(
                 self.network,
+                &self.block_hash,
                 self.block_height,
                 &self.tx_id,
                 self.tx_index,
@@ -169,6 +174,7 @@ impl TransactionCache {
         let db_rune = DbRune::from_etching(
             etching,
             number,
+            &self.block_hash,
             self.block_height,
             self.tx_index,
             &self.tx_id,
@@ -197,6 +203,7 @@ impl TransactionCache {
         let db_rune = DbRune::from_cenotaph_etching(
             rune,
             number,
+            &self.block_hash,
             self.block_height,
             self.tx_index,
             &self.tx_id,
@@ -219,6 +226,7 @@ impl TransactionCache {
         new_ledger_entry(
             mint_amount.0,
             rune_id.clone(),
+            &self.block_hash,
             self.block_height,
             self.tx_index,
             &self.tx_id,
@@ -238,6 +246,7 @@ impl TransactionCache {
         new_ledger_entry(
             mint_amount.0,
             rune_id.clone(),
+            &self.block_hash,
             self.block_height,
             self.tx_index,
             &self.tx_id,
@@ -288,6 +297,7 @@ impl TransactionCache {
             );
             results.extend(move_rune_balance_to_output(
                 self.network,
+                &self.block_hash,
                 self.block_height,
                 &self.tx_id,
                 self.tx_index,
@@ -322,6 +332,7 @@ impl TransactionCache {
                             }
                             results.extend(move_rune_balance_to_output(
                                 self.network,
+                                &self.block_hash,
                                 self.block_height,
                                 &self.tx_id,
                                 self.tx_index,
@@ -341,6 +352,7 @@ impl TransactionCache {
                             let amount = edict.amount.min(unallocated);
                             results.extend(move_rune_balance_to_output(
                                 self.network,
+                                &self.block_hash,
                                 self.block_height,
                                 &self.tx_id,
                                 self.tx_index,
@@ -364,6 +376,7 @@ impl TransactionCache {
                     }
                     results.extend(move_rune_balance_to_output(
                         self.network,
+                        &self.block_hash,
                         self.block_height,
                         &self.tx_id,
                         self.tx_index,
@@ -406,6 +419,7 @@ impl TransactionCache {
 fn new_ledger_entry(
     amount: u128,
     rune_id: RuneId,
+    block_hash: &String,
     block_height: u64,
     tx_index: u32,
     tx_id: &String,
@@ -419,6 +433,7 @@ fn new_ledger_entry(
     let entry = DbLedgerEntry::from_values(
         amount,
         rune_id,
+        block_hash,
         block_height,
         tx_index,
         *next_event_index,
@@ -438,6 +453,7 @@ fn new_ledger_entry(
 /// transferred. If `output` is `None`, the runes will be burnt.
 fn move_rune_balance_to_output(
     network: Network,
+    block_hash: &String,
     block_height: u64,
     tx_id: &String,
     tx_index: u32,
@@ -497,6 +513,7 @@ fn move_rune_balance_to_output(
             results.push(new_ledger_entry(
                 balance_taken,
                 *rune_id,
+                block_hash,
                 block_height,
                 tx_index,
                 tx_id,
@@ -527,6 +544,7 @@ fn move_rune_balance_to_output(
         results.push(new_ledger_entry(
             total_sent,
             *rune_id,
+            block_hash,
             block_height,
             tx_index,
             &tx_id,

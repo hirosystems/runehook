@@ -1,7 +1,7 @@
 use std::{
     error::Error,
     io::{Cursor, Read},
-    ops::{Add, AddAssign},
+    ops::AddAssign,
 };
 
 use bytes::{BufMut, BytesMut};

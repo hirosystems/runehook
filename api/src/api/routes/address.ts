@@ -6,17 +6,18 @@ import {
   AddressParamSchema,
   LimitParamSchema,
   OffsetParamSchema,
-  PaginatedResponse,
   BalanceResponseSchema,
 } from '../schemas';
 import { parseBalanceResponse } from '../util/helpers';
+import { Optional, PaginatedResponse } from '@hirosystems/api-toolkit';
+import { handleCache } from '../util/cache';
 
 export const AddressRoutes: FastifyPluginCallback<
   Record<never, never>,
   Server,
   TypeBoxTypeProvider
 > = (fastify, options, done) => {
-  // fastify.addHook('preHandler', handleInscriptionTransfersCache);
+  fastify.addHook('preHandler', handleCache);
 
   fastify.get(
     '/address/:address/balances',
@@ -30,8 +31,8 @@ export const AddressRoutes: FastifyPluginCallback<
           address: AddressParamSchema,
         }),
         querystring: Type.Object({
-          offset: Type.Optional(OffsetParamSchema),
-          limit: Type.Optional(LimitParamSchema),
+          offset: Optional(OffsetParamSchema),
+          limit: Optional(LimitParamSchema),
         }),
         response: {
           200: PaginatedResponse(BalanceResponseSchema, 'Paginated balances response'),

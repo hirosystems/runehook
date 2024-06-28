@@ -50,7 +50,7 @@ impl IndexCache {
             next_rune_number: max_rune_number + 1,
             rune_cache: LruCache::new(cap),
             output_cache: LruCache::new(cap),
-            tx_cache: TransactionCache::new(network, 1, 0, &"".to_string(), 0),
+            tx_cache: TransactionCache::new(network, &"".to_string(), 1, 0, &"".to_string(), 0),
             db_cache: DbCache::new(),
         }
     }
@@ -58,13 +58,20 @@ impl IndexCache {
     /// Creates a fresh transaction index cache.
     pub async fn begin_transaction(
         &mut self,
+        block_hash: &String,
         block_height: u64,
         tx_index: u32,
         tx_id: &String,
         timestamp: u32,
     ) {
-        self.tx_cache =
-            TransactionCache::new(self.network, block_height, tx_index, tx_id, timestamp);
+        self.tx_cache = TransactionCache::new(
+            self.network,
+            block_hash,
+            block_height,
+            tx_index,
+            tx_id,
+            timestamp,
+        );
     }
 
     /// Finalizes the current transaction index cache.

@@ -68,6 +68,7 @@ pub async fn index_block(
     ctx: &Context,
 ) {
     let stopwatch = std::time::Instant::now();
+    let block_hash = &block.block_identifier.hash;
     let block_height = block.block_identifier.index;
     info!(ctx.expect_logger(), "Indexing block {}...", block_height);
     let mut db_tx = pg_client
@@ -79,7 +80,7 @@ pub async fn index_block(
         let tx_index = tx.metadata.index;
         let tx_id = &tx.transaction_identifier.hash;
         index_cache
-            .begin_transaction(block_height, tx_index, tx_id, block.timestamp)
+            .begin_transaction(block_hash, block_height, tx_index, tx_id, block.timestamp)
             .await;
         if let Some(artifact) = Runestone::decipher(&transaction) {
             match artifact {
