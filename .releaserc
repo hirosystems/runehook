@@ -20,9 +20,27 @@
         "preset": "conventionalcommits"
       }
     ],
+    [
+      "@semantic-release/npm",
+      {
+        "pkgRoot": "./api",
+        "npmPublish": false
+      }
+    ],
     "@semantic-release-cargo/semantic-release-cargo",
     "@semantic-release/github",
     "@semantic-release/changelog",
-    "@semantic-release/git"
+    [
+      "@semantic-release/git",
+      {
+        "assets": [
+          "CHANGELOG.md",
+          "Cargo.toml",
+          "Cargo.lock",
+          "api/package.json",
+          "api/package-lock.json"
+        ]
+      }
+    ]
   ]
 }
