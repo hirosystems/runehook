@@ -107,7 +107,10 @@ impl IndexCache {
         db_tx: &mut Transaction<'_>,
         ctx: &Context,
     ) {
-        debug!(ctx.expect_logger(), "Cenotaph {}", self.tx_cache.location);
+        debug!(
+            ctx.expect_logger(),
+            "{:?} {}", cenotaph, self.tx_cache.location
+        );
         self.scan_tx_input_rune_balance(tx_inputs, db_tx, ctx).await;
         let entries = self.tx_cache.apply_cenotaph_input_burn(cenotaph);
         self.add_ledger_entries_to_db_cache(&entries);

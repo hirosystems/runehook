@@ -239,14 +239,12 @@ impl TransactionCache {
     ) -> Option<DbLedgerEntry> {
         // TODO: What's the default mint amount if none was provided?
         let terms_amount = db_rune.terms_amount.unwrap_or(PgNumericU128(0));
-        if let Some(terms_cap) = db_rune.terms_cap {
-            if total_mints >= terms_cap.0 {
-                debug!(
-                    ctx.expect_logger(),
-                    "Mint {} exceeds mint cap, ignoring {}", rune_id, self.location
-                );
-                return None;
-            }
+        if !is_valid_mint(db_rune, total_mints, &self.location) {
+            debug!(
+                ctx.expect_logger(),
+                "Invalid mint {} {}", rune_id, self.location
+            );
+            return None;
         }
         info!(
             ctx.expect_logger(),
@@ -280,14 +278,12 @@ impl TransactionCache {
     ) -> Option<DbLedgerEntry> {
         // TODO: What's the default mint amount if none was provided?
         let terms_amount = db_rune.terms_amount.unwrap_or(PgNumericU128(0));
-        if let Some(terms_cap) = db_rune.terms_cap {
-            if total_mints >= terms_cap.0 {
-                debug!(
-                    ctx.expect_logger(),
-                    "Cenotaph mint {} exceeds mint cap, ignoring {}", rune_id, self.location
-                );
-                return None;
-            }
+        if !is_valid_mint(db_rune, total_mints, &self.location) {
+            debug!(
+                ctx.expect_logger(),
+                "Invalid mint {} {}", rune_id, self.location
+            );
+            return None;
         }
         info!(
             ctx.expect_logger(),
@@ -452,6 +448,37 @@ impl TransactionCache {
     }
 }
 
+/// Determines if a mint is valid depending on the rune's mint terms.
+fn is_valid_mint(db_rune: &DbRune, total_mints: u128, location: &TransactionLocation) -> bool {
+    if let Some(terms_cap) = db_rune.terms_cap {
+        if total_mints >= terms_cap.0 {
+            return false;
+        }
+    }
+    if let Some(terms_height_start) = db_rune.terms_height_start {
+        if location.block_height < terms_height_start.0 {
+            return false;
+        }
+    }
+    if let Some(terms_height_end) = db_rune.terms_height_end {
+        if location.block_height > terms_height_end.0 {
+            return false;
+        }
+    }
+    if let Some(terms_offset_start) = db_rune.terms_offset_start {
+        if location.block_height < db_rune.block_height.0 + terms_offset_start.0 {
+            return false;
+        }
+    }
+    if let Some(terms_offset_end) = db_rune.terms_offset_end {
+        if location.block_height > db_rune.block_height.0 + terms_offset_end.0 {
+            return false;
+        }
+    }
+    true
+}
+
+/// Creates a new ledger entry.
 fn new_ledger_entry(
     location: &TransactionLocation,
     amount: u128,
