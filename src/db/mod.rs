@@ -337,6 +337,32 @@ pub async fn pg_get_rune_by_id(
     Some(DbRune::from_pg_row(&row))
 }
 
+pub async fn pg_get_rune_total_mints(
+    id: &RuneId,
+    db_tx: &mut Transaction<'_>,
+    ctx: &Context,
+) -> Option<u128> {
+    let row = match db_tx
+        .query_opt("SELECT total_mints FROM runes WHERE id = $1", &[&id.to_string()])
+        .await
+    {
+        Ok(row) => row,
+        Err(e) => {
+            error!(
+                ctx.expect_logger(),
+                "error retrieving rune minted total: {}",
+                e.to_string()
+            );
+            panic!();
+        }
+    };
+    let Some(row) = row else {
+        return None;
+    };
+    let minted: PgNumericU128 = row.get("total_mints");
+    Some(minted.0)
+}
+
 pub async fn pg_get_missed_input_rune_balances(
     outputs: Vec<(u32, String, u32)>,
     db_tx: &mut Transaction<'_>,

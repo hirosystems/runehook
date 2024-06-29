@@ -31,10 +31,10 @@ pub struct DbRune {
     pub terms_offset_end: Option<PgNumericU64>,
     pub turbo: bool,
     pub minted: PgNumericU128,
-    pub total_mints: PgBigIntU32,
+    pub total_mints: PgNumericU128,
     pub burned: PgNumericU128,
-    pub total_burns: PgBigIntU32,
-    pub total_operations: PgBigIntU32,
+    pub total_burns: PgNumericU128,
+    pub total_operations: PgNumericU128,
     pub timestamp: PgBigIntU32,
 }
 
@@ -93,10 +93,10 @@ impl DbRune {
             terms_offset_end,
             turbo: etching.turbo,
             minted: PgNumericU128(0),
-            total_mints: PgBigIntU32(0),
+            total_mints: PgNumericU128(0),
             burned: PgNumericU128(0),
-            total_burns: PgBigIntU32(0),
-            total_operations: PgBigIntU32(0),
+            total_burns: PgNumericU128(0),
+            total_operations: PgNumericU128(0),
             timestamp: PgBigIntU32(location.timestamp),
         }
     }
@@ -122,10 +122,10 @@ impl DbRune {
             terms_offset_end: None,
             turbo: false,
             minted: PgNumericU128(0),
-            total_mints: PgBigIntU32(0),
+            total_mints: PgNumericU128(0),
             burned: PgNumericU128(0),
-            total_burns: PgBigIntU32(0),
-            total_operations: PgBigIntU32(0),
+            total_burns: PgNumericU128(0),
+            total_operations: PgNumericU128(0),
             timestamp: PgBigIntU32(location.timestamp),
         }
     }

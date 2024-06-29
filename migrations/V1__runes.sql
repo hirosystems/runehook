@@ -18,10 +18,10 @@ CREATE TABLE IF NOT EXISTS runes (
     terms_offset_end        NUMERIC,
     turbo                   BOOLEAN NOT NULL DEFAULT FALSE,
     minted                  NUMERIC NOT NULL DEFAULT 0,
-    total_mints             BIGINT NOT NULL DEFAULT 0,
+    total_mints             NUMERIC NOT NULL DEFAULT 0,
     burned                  NUMERIC NOT NULL DEFAULT 0,
-    total_burns             BIGINT NOT NULL DEFAULT 0,
-    total_operations        BIGINT NOT NULL DEFAULT 0,
+    total_burns             NUMERIC NOT NULL DEFAULT 0,
+    total_operations        NUMERIC NOT NULL DEFAULT 0,
     timestamp               BIGINT NOT NULL
 );
 CREATE INDEX runes_block_height_tx_index_index ON runes (block_height, tx_index);

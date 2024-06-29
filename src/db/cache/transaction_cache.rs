@@ -233,57 +233,77 @@ impl TransactionCache {
     pub fn apply_mint(
         &mut self,
         rune_id: &RuneId,
+        total_mints: u128,
         db_rune: &DbRune,
         ctx: &Context,
-    ) -> DbLedgerEntry {
+    ) -> Option<DbLedgerEntry> {
         // TODO: What's the default mint amount if none was provided?
-        let mint_amount = db_rune.terms_amount.unwrap_or(PgNumericU128(0));
+        let terms_amount = db_rune.terms_amount.unwrap_or(PgNumericU128(0));
+        if let Some(terms_cap) = db_rune.terms_cap {
+            if total_mints >= terms_cap.0 {
+                debug!(
+                    ctx.expect_logger(),
+                    "Mint {} exceeds mint cap, ignoring {}", rune_id, self.location
+                );
+                return None;
+            }
+        }
         info!(
             ctx.expect_logger(),
-            "MINT {} ({}) {} {}", rune_id, db_rune.spaced_name, mint_amount.0, self.location
+            "MINT {} ({}) {} {}", rune_id, db_rune.spaced_name, terms_amount.0, self.location
         );
         self.add_input_runes(
             rune_id,
             InputRuneBalance {
                 address: None,
-                amount: mint_amount.0,
+                amount: terms_amount.0,
             },
         );
-        new_ledger_entry(
+        Some(new_ledger_entry(
             &self.location,
-            mint_amount.0,
+            terms_amount.0,
             rune_id.clone(),
             None,
             None,
             None,
             DbLedgerOperation::Mint,
             &mut self.next_event_index,
-        )
+        ))
     }
 
     pub fn apply_cenotaph_mint(
         &mut self,
         rune_id: &RuneId,
+        total_mints: u128,
         db_rune: &DbRune,
         ctx: &Context,
-    ) -> DbLedgerEntry {
+    ) -> Option<DbLedgerEntry> {
         // TODO: What's the default mint amount if none was provided?
-        let mint_amount = db_rune.terms_amount.unwrap_or(PgNumericU128(0));
+        let terms_amount = db_rune.terms_amount.unwrap_or(PgNumericU128(0));
+        if let Some(terms_cap) = db_rune.terms_cap {
+            if total_mints >= terms_cap.0 {
+                debug!(
+                    ctx.expect_logger(),
+                    "Cenotaph mint {} exceeds mint cap, ignoring {}", rune_id, self.location
+                );
+                return None;
+            }
+        }
         info!(
             ctx.expect_logger(),
-            "CENOTAPH MINT {} {} {}", db_rune.spaced_name, mint_amount.0, self.location
+            "CENOTAPH MINT {} {} {}", db_rune.spaced_name, terms_amount.0, self.location
         );
         // This entry does not go in the input runes, it gets burned immediately.
-        new_ledger_entry(
+        Some(new_ledger_entry(
             &self.location,
-            mint_amount.0,
+            terms_amount.0,
             rune_id.clone(),
             None,
             None,
             None,
             DbLedgerOperation::Burn,
             &mut self.next_event_index,
-        )
+        ))
     }
 
     pub fn apply_edict(&mut self, edict: &Edict, ctx: &Context) -> Vec<DbLedgerEntry> {

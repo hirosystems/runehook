@@ -101,6 +101,12 @@ impl AddAssign for PgNumericU128 {
     }
 }
 
+impl AddAssign<u128> for PgNumericU128 {
+    fn add_assign(&mut self, other: u128) {
+        self.0 += other;
+    }
+}
+
 #[cfg(test)]
 mod test {
     use test_case::test_case;
