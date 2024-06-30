@@ -210,8 +210,6 @@ impl TransactionCache {
         db_rune: &DbRune,
         ctx: &Context,
     ) -> Option<DbLedgerEntry> {
-        // TODO: What's the default mint amount if none was provided?
-        let terms_amount = db_rune.terms_amount.unwrap_or(PgNumericU128(0));
         if !is_valid_mint(db_rune, total_mints, &self.location) {
             debug!(
                 ctx.expect_logger(),
@@ -219,6 +217,7 @@ impl TransactionCache {
             );
             return None;
         }
+        let terms_amount = db_rune.terms_amount.unwrap();
         info!(
             ctx.expect_logger(),
             "MINT {} ({}) {} {}", rune_id, db_rune.spaced_name, terms_amount.0, self.location
@@ -249,8 +248,6 @@ impl TransactionCache {
         db_rune: &DbRune,
         ctx: &Context,
     ) -> Option<DbLedgerEntry> {
-        // TODO: What's the default mint amount if none was provided?
-        let terms_amount = db_rune.terms_amount.unwrap_or(PgNumericU128(0));
         if !is_valid_mint(db_rune, total_mints, &self.location) {
             debug!(
                 ctx.expect_logger(),
@@ -258,6 +255,7 @@ impl TransactionCache {
             );
             return None;
         }
+        let terms_amount = db_rune.terms_amount.unwrap();
         info!(
             ctx.expect_logger(),
             "CENOTAPH MINT {} {} {}", db_rune.spaced_name, terms_amount.0, self.location
@@ -423,6 +421,9 @@ impl TransactionCache {
 
 /// Determines if a mint is valid depending on the rune's mint terms.
 fn is_valid_mint(db_rune: &DbRune, total_mints: u128, location: &TransactionLocation) -> bool {
+    if db_rune.terms_amount.is_none() {
+        return false;
+    }
     if let Some(terms_cap) = db_rune.terms_cap {
         if total_mints >= terms_cap.0 {
             return false;

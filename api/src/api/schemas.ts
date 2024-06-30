@@ -49,12 +49,19 @@ export const LimitSchema = Type.Integer({
 export type Limit = Static<typeof LimitSchema>;
 
 const RuneIdSchema = Type.RegEx(/^[0-9]+:[0-9]+$/);
+const RuneNumberSchema = Type.RegEx(/^[0-9]+$/);
+export const RuneNumberSchemaCType = TypeCompiler.Compile(RuneNumberSchema);
 const RuneNameSchema = Type.RegEx(/^[A-Z]+$/);
 export const RuneNameSchemaCType = TypeCompiler.Compile(RuneNameSchema);
 const RuneSpacedNameSchema = Type.RegEx(/^[A-Z](•[A-Z]+)+$/);
 export const RuneSpacedNameSchemaCType = TypeCompiler.Compile(RuneSpacedNameSchema);
 
-export const RuneSchema = Type.Union([RuneIdSchema, RuneNameSchema, RuneSpacedNameSchema]);
+export const RuneSchema = Type.Union([
+  RuneIdSchema,
+  RuneNumberSchema,
+  RuneNameSchema,
+  RuneSpacedNameSchema,
+]);
 export type Rune = Static<typeof RuneSchema>;
 
 export const AddressSchema = Type.String({
@@ -127,6 +134,7 @@ export const EtchingResponseSchema = Type.Object({
     offset_end: Nullable(Type.Integer({ examples: [200] })),
   }),
   supply: Type.Object({
+    current: Type.String({ examples: ['11274916350'] }),
     minted: Type.String({ examples: ['274916100'] }),
     total_mints: Type.String({ examples: ['250'] }),
     mint_percentage: Type.String({ examples: ['59.4567'] }),

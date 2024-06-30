@@ -2,18 +2,21 @@ import BigNumber from 'bignumber.js';
 import { DbBalance, DbItemWithRune, DbLedgerEntry, DbRuneWithChainTip } from '../../pg/types';
 import { EtchingResponse, ActivityResponse, BalanceResponse } from '../schemas';
 
-function divisibility(num: string, decimals: number): string {
+function divisibility(num: string | BigNumber, decimals: number): string {
   return new BigNumber(num).shiftedBy(-1 * decimals).toFixed(decimals);
 }
 
 export function parseEtchingResponse(rune: DbRuneWithChainTip): EtchingResponse {
   let mintable = true;
   if (
+    rune.terms_amount == null ||
     (rune.terms_cap && BigNumber(rune.total_mints).gte(rune.terms_cap)) ||
-    (rune.terms_height_start && rune.chain_tip < rune.terms_height_start) ||
-    (rune.terms_height_end && rune.chain_tip > rune.terms_height_end) ||
-    (rune.terms_offset_start && rune.chain_tip < rune.block_height + rune.terms_offset_start) ||
-    (rune.terms_offset_end && rune.chain_tip > rune.block_height + rune.terms_offset_end)
+    (rune.terms_height_start && BigNumber(rune.chain_tip).lt(rune.terms_height_start)) ||
+    (rune.terms_height_end && BigNumber(rune.chain_tip).gt(rune.terms_height_end)) ||
+    (rune.terms_offset_start &&
+      BigNumber(rune.chain_tip).lt(BigNumber(rune.block_height).plus(rune.terms_offset_start))) ||
+    (rune.terms_offset_end &&
+      BigNumber(rune.chain_tip).gt(BigNumber(rune.block_height).plus(rune.terms_offset_end)))
   ) {
     mintable = false;
   }
@@ -23,7 +26,7 @@ export function parseEtchingResponse(rune: DbRuneWithChainTip): EtchingResponse 
     name: rune.name,
     spaced_name: rune.spaced_name,
     block_hash: rune.block_hash,
-    block_height: rune.block_height,
+    block_height: parseInt(rune.block_height),
     tx_index: rune.tx_index,
     tx_id: rune.tx_id,
     divisibility: rune.divisibility,
@@ -32,12 +35,16 @@ export function parseEtchingResponse(rune: DbRuneWithChainTip): EtchingResponse 
     mint_terms: {
       amount: rune.terms_amount ? divisibility(rune.terms_amount, rune.divisibility) : null,
       cap: rune.terms_cap ? divisibility(rune.terms_cap, rune.divisibility) : null,
-      height_start: rune.terms_height_start,
-      height_end: rune.terms_height_end,
-      offset_start: rune.terms_offset_start,
-      offset_end: rune.terms_offset_end,
+      height_start: rune.terms_height_start ? parseInt(rune.terms_height_start) : null,
+      height_end: rune.terms_height_end ? parseInt(rune.terms_height_end) : null,
+      offset_start: rune.terms_offset_start ? parseInt(rune.terms_offset_start) : null,
+      offset_end: rune.terms_offset_end ? parseInt(rune.terms_offset_end) : null,
     },
     supply: {
+      current: divisibility(
+        BigNumber(rune.minted).plus(rune.burned).plus(rune.premine),
+        rune.divisibility
+      ),
       minted: divisibility(rune.minted, rune.divisibility),
       total_mints: rune.total_mints,
       burned: divisibility(rune.burned, rune.divisibility),
@@ -60,7 +67,7 @@ export function parseActivityResponse(entry: DbItemWithRune<DbLedgerEntry>): Act
       spaced_name: entry.spaced_name,
     },
     block_hash: entry.block_hash,
-    block_height: entry.block_height,
+    block_height: parseInt(entry.block_height),
     tx_index: entry.tx_index,
     tx_id: entry.tx_id,
     vout: entry.output,

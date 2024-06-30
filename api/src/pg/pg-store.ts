@@ -12,7 +12,6 @@ import {
   DbItemWithRune,
   DbLedgerEntry,
   DbPaginatedResult,
-  DbRune,
   DbRuneWithChainTip,
 } from './types';
 import {
@@ -25,6 +24,7 @@ import {
   RuneNameSchemaCType,
   RuneSpacedNameSchemaCType,
   TransactionId,
+  RuneNumberSchemaCType,
 } from '../api/schemas';
 
 function runeFilter(sql: PgSqlClient, etching: string, prefix?: string): PgSqlQuery {
@@ -34,6 +34,8 @@ function runeFilter(sql: PgSqlClient, etching: string, prefix?: string): PgSqlQu
     filter = sql`${sql(`${p}name`)} = ${etching}`;
   } else if (RuneSpacedNameSchemaCType.Check(etching)) {
     filter = sql`${sql(`${p}spaced_name`)} = ${etching}`;
+  } else if (RuneNumberSchemaCType.Check(etching)) {
+    filter = sql`${sql(`${p}number`)} = ${etching}`;
   }
   return filter;
 }

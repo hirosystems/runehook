@@ -11,7 +11,7 @@ export type DbRune = {
   name: string;
   spaced_name: string;
   block_hash: string;
-  block_height: number;
+  block_height: string;
   tx_index: number;
   tx_id: string;
   divisibility: number;
@@ -19,10 +19,10 @@ export type DbRune = {
   symbol: string;
   terms_amount: string | null;
   terms_cap: string | null;
-  terms_height_start: number | null;
-  terms_height_end: number | null;
-  terms_offset_start: number | null;
-  terms_offset_end: number | null;
+  terms_height_start: string | null;
+  terms_height_end: string | null;
+  terms_offset_start: string | null;
+  terms_offset_end: string | null;
   turbo: boolean;
   minted: string;
   total_mints: string;
@@ -32,14 +32,14 @@ export type DbRune = {
   timestamp: number;
 };
 
-export type DbRuneWithChainTip = DbRune & { chain_tip: number };
+export type DbRuneWithChainTip = DbRune & { chain_tip: string };
 
 type DbLedgerOperation = 'mint' | 'burn' | 'send' | 'receive';
 
 export type DbLedgerEntry = {
   rune_id: string;
   block_hash: string;
-  block_height: number;
+  block_height: string;
   tx_index: number;
   tx_id: string;
   output: number;
