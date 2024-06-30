@@ -7,12 +7,14 @@ import { EtchingRoutes } from './routes/etchings';
 import { AddressRoutes } from './routes/addresses';
 import { TransactionRoutes } from './routes/transactions';
 import { BlockRoutes } from './routes/blocks';
+import { StatusRoutes } from './routes/status';
 
 export const Api: FastifyPluginAsync<
   Record<never, never>,
   Server,
   TypeBoxTypeProvider
 > = async fastify => {
+  await fastify.register(StatusRoutes);
   await fastify.register(EtchingRoutes);
   await fastify.register(AddressRoutes);
   await fastify.register(TransactionRoutes);

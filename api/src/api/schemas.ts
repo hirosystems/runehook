@@ -107,6 +107,15 @@ export type Block = Static<typeof BlockSchema>;
 // Responses
 // ==========================
 
+export const ApiStatusResponse = Type.Object(
+  {
+    server_version: Type.String({ examples: [''] }),
+    status: Type.String(),
+    block_height: Optional(Type.Integer()),
+  },
+  { title: 'Api Status Response' }
+);
+
 export const EtchingResponseSchema = Type.Object({
   id: Type.String({ examples: ['840000:1'] }),
   name: Type.String({ examples: ['ZZZZZFEHUZZZZZ'] }),

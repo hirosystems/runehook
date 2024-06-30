@@ -82,6 +82,13 @@ export class PgStore extends BasePgStore {
     return result[0]?.etag;
   }
 
+  async getChainTipBlockHeight(): Promise<string | undefined> {
+    const result = await this.sql<{ block_height: string }[]>`
+      SELECT block_height FROM ledger ORDER BY block_height DESC LIMIT 1
+    `;
+    return result[0]?.block_height;
+  }
+
   async getEtching(id: Rune): Promise<DbRuneWithChainTip | undefined> {
     const result = await this.sql<DbRuneWithChainTip[]>`
       SELECT *, (SELECT MAX(block_height) FROM ledger) AS chain_tip
@@ -95,7 +102,7 @@ export class PgStore extends BasePgStore {
     const results = await this.sql<DbCountedQueryResult<DbRuneWithChainTip>[]>`
       WITH
         rune_count AS (SELECT COALESCE(MAX(number), 0) + 1 AS total FROM runes),
-        max AS (SELECT MAX(block_height) AS max FROM ledger)
+        max AS (SELECT MAX(block_height) AS chain_tip FROM ledger)
       SELECT *, (SELECT total FROM rune_count), (SELECT chain_tip FROM max)
       FROM runes
       ORDER BY block_height DESC, tx_index DESC
