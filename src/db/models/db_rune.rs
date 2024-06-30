@@ -2,7 +2,7 @@ use ordinals::{Etching, Rune, RuneId, SpacedRune};
 use tokio_postgres::Row;
 
 use crate::db::{
-    cache::transaction_cache::TransactionLocation,
+    cache::transaction_location::TransactionLocation,
     types::{
         pg_bigint_u32::PgBigIntU32, pg_numeric_u128::PgNumericU128, pg_numeric_u64::PgNumericU64,
         pg_smallint_u8::PgSmallIntU8,
@@ -168,12 +168,69 @@ impl DbRune {
 }
 
 #[cfg(test)]
+impl DbRune {
+    pub fn factory() -> Self {
+        DbRune {
+            id: "840000:1".to_string(),
+            number: PgBigIntU32(1),
+            name: "ZZZZZFEHUZZZZZ".to_string(),
+            spaced_name: "Z•Z•Z•Z•Z•FEHU•Z•Z•Z•Z•Z".to_string(),
+            block_hash: "0000000000000000000320283a032748cef8227873ff4872689bf23f1cda83a5".to_string(),
+            block_height: PgNumericU64(840000),
+            tx_index: PgBigIntU32(1),
+            tx_id: "2bb85f4b004be6da54f766c17c1e855187327112c231ef2ff35ebad0ea67c69e".to_string(),
+            divisibility: PgSmallIntU8(2),
+            premine: PgNumericU128(11000000000),
+            symbol: "ᚠ".to_string(),
+            terms_amount: Some(PgNumericU128(100)),
+            terms_cap: Some(PgNumericU128(1111111)),
+            terms_height_start: None,
+            terms_height_end: None,
+            terms_offset_start: None,
+            terms_offset_end: None,
+            turbo: true,
+            minted: PgNumericU128(0),
+            total_mints: PgNumericU128(0),
+            burned: PgNumericU128(0),
+            total_burns: PgNumericU128(0),
+            total_operations: PgNumericU128(0),
+            timestamp: PgBigIntU32(1713571767),
+        }
+    }
+
+    pub fn terms_height_start(&mut self, val: Option<PgNumericU64>) -> &Self {
+        self.terms_height_start = val;
+        self
+    }
+
+    pub fn terms_height_end(&mut self, val: Option<PgNumericU64>) -> &Self {
+        self.terms_height_end = val;
+        self
+    }
+
+    pub fn terms_offset_start(&mut self, val: Option<PgNumericU64>) -> &Self {
+        self.terms_offset_start = val;
+        self
+    }
+
+    pub fn terms_offset_end(&mut self, val: Option<PgNumericU64>) -> &Self {
+        self.terms_offset_end = val;
+        self
+    }
+
+    pub fn terms_cap(&mut self, val: Option<PgNumericU128>) -> &Self {
+        self.terms_cap = val;
+        self
+    }
+}
+
+#[cfg(test)]
 mod test {
     use std::str::FromStr;
 
     use ordinals::{Etching, SpacedRune, Terms};
 
-    use crate::db::cache::transaction_cache::TransactionLocation;
+    use crate::db::cache::transaction_location::TransactionLocation;
 
     use super::DbRune;
 

@@ -9,6 +9,7 @@ use super::pg_get_max_rune_number;
 pub mod db_cache;
 pub mod index_cache;
 pub mod transaction_cache;
+pub mod transaction_location;
 
 /// Creates a blank index cache pointing to the correct next rune number to etch.
 pub async fn new_index_cache(config: &Config, pg_client: &mut Client, ctx: &Context) -> IndexCache {
