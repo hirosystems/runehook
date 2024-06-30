@@ -13,6 +13,7 @@ import {
   DbLedgerEntry,
   DbPaginatedResult,
   DbRune,
+  DbRuneWithChainTip,
 } from './types';
 import {
   Address,
@@ -79,18 +80,21 @@ export class PgStore extends BasePgStore {
     return result[0]?.etag;
   }
 
-  async getEtching(id: Rune): Promise<DbRune | undefined> {
-    const result = await this.sql<DbRune[]>`
-      SELECT * FROM runes WHERE ${runeFilter(this.sql, id)}
+  async getEtching(id: Rune): Promise<DbRuneWithChainTip | undefined> {
+    const result = await this.sql<DbRuneWithChainTip[]>`
+      SELECT *, (SELECT MAX(block_height) FROM ledger) AS chain_tip
+      FROM runes WHERE ${runeFilter(this.sql, id)}
     `;
     if (result.count == 0) return undefined;
     return result[0];
   }
 
-  async getEtchings(offset: Offset, limit: Limit): Promise<DbPaginatedResult<DbRune>> {
-    const results = await this.sql<DbCountedQueryResult<DbRune>[]>`
-      WITH rune_count AS (SELECT COALESCE(MAX(number), 0) + 1 AS total FROM runes)
-      SELECT *, (SELECT total FROM rune_count)
+  async getEtchings(offset: Offset, limit: Limit): Promise<DbPaginatedResult<DbRuneWithChainTip>> {
+    const results = await this.sql<DbCountedQueryResult<DbRuneWithChainTip>[]>`
+      WITH
+        rune_count AS (SELECT COALESCE(MAX(number), 0) + 1 AS total FROM runes),
+        max AS (SELECT MAX(block_height) AS max FROM ledger)
+      SELECT *, (SELECT total FROM rune_count), (SELECT chain_tip FROM max)
       FROM runes
       ORDER BY block_height DESC, tx_index DESC
       OFFSET ${offset} LIMIT ${limit}

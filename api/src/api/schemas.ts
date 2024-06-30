@@ -116,6 +116,8 @@ export const EtchingResponseSchema = Type.Object({
   divisibility: Type.Integer({ examples: [2] }),
   premine: Type.String({ examples: ['11000000000'] }),
   symbol: Type.String({ examples: ['ᚠ'] }),
+  turbo: Type.Boolean({ examples: [false] }),
+  timestamp: Type.Integer({ examples: [1713571767] }),
   mint_terms: Type.Object({
     amount: Nullable(Type.String({ examples: ['100'] })),
     cap: Nullable(Type.String({ examples: ['1111111'] })),
@@ -124,12 +126,14 @@ export const EtchingResponseSchema = Type.Object({
     offset_start: Nullable(Type.Integer({ examples: [0] })),
     offset_end: Nullable(Type.Integer({ examples: [200] })),
   }),
-  turbo: Type.Boolean({ examples: [false] }),
-  minted: Type.String({ examples: ['274916100'] }),
-  total_mints: Type.Integer({ examples: [250] }),
-  burned: Type.String({ examples: ['5100'] }),
-  total_burns: Type.Integer({ examples: [17] }),
-  timestamp: Type.Integer({ examples: [1713571767] }),
+  supply: Type.Object({
+    minted: Type.String({ examples: ['274916100'] }),
+    total_mints: Type.String({ examples: ['250'] }),
+    mint_percentage: Type.String({ examples: ['59.4567'] }),
+    mintable: Type.Boolean(),
+    burned: Type.String({ examples: ['5100'] }),
+    total_burns: Type.String({ examples: ['17'] }),
+  }),
 });
 export type EtchingResponse = Static<typeof EtchingResponseSchema>;
 

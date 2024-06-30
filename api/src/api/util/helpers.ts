@@ -1,12 +1,22 @@
 import BigNumber from 'bignumber.js';
-import { DbBalance, DbItemWithRune, DbLedgerEntry, DbRune } from '../../pg/types';
+import { DbBalance, DbItemWithRune, DbLedgerEntry, DbRuneWithChainTip } from '../../pg/types';
 import { EtchingResponse, ActivityResponse, BalanceResponse } from '../schemas';
 
 function divisibility(num: string, decimals: number): string {
   return new BigNumber(num).shiftedBy(-1 * decimals).toFixed(decimals);
 }
 
-export function parseEtchingResponse(rune: DbRune): EtchingResponse {
+export function parseEtchingResponse(rune: DbRuneWithChainTip): EtchingResponse {
+  let mintable = true;
+  if (
+    (rune.terms_cap && BigNumber(rune.total_mints).gte(rune.terms_cap)) ||
+    (rune.terms_height_start && rune.chain_tip < rune.terms_height_start) ||
+    (rune.terms_height_end && rune.chain_tip > rune.terms_height_end) ||
+    (rune.terms_offset_start && rune.chain_tip < rune.block_height + rune.terms_offset_start) ||
+    (rune.terms_offset_end && rune.chain_tip > rune.block_height + rune.terms_offset_end)
+  ) {
+    mintable = false;
+  }
   return {
     id: rune.id,
     number: rune.number,
@@ -27,11 +37,17 @@ export function parseEtchingResponse(rune: DbRune): EtchingResponse {
       offset_start: rune.terms_offset_start,
       offset_end: rune.terms_offset_end,
     },
+    supply: {
+      minted: divisibility(rune.minted, rune.divisibility),
+      total_mints: rune.total_mints,
+      burned: divisibility(rune.burned, rune.divisibility),
+      total_burns: rune.total_burns,
+      mint_percentage: rune.terms_cap
+        ? BigNumber(rune.total_mints).div(rune.terms_cap).times(100).toFixed(4)
+        : '0.0000',
+      mintable,
+    },
     turbo: rune.turbo,
-    minted: divisibility(rune.minted, rune.divisibility),
-    total_mints: rune.total_mints,
-    burned: divisibility(rune.burned, rune.divisibility),
-    total_burns: rune.total_burns,
     timestamp: rune.timestamp,
   };
 }

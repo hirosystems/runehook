@@ -25,12 +25,14 @@ export type DbRune = {
   terms_offset_end: number | null;
   turbo: boolean;
   minted: string;
-  total_mints: number;
+  total_mints: string;
   burned: string;
-  total_burns: number;
-  total_operations: number;
+  total_burns: string;
+  total_operations: string;
   timestamp: number;
 };
+
+export type DbRuneWithChainTip = DbRune & { chain_tip: number };
 
 type DbLedgerOperation = 'mint' | 'burn' | 'send' | 'receive';
 
