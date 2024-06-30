@@ -25,12 +25,7 @@ export function parseEtchingResponse(rune: DbRuneWithChainTip): EtchingResponse 
     number: rune.number,
     name: rune.name,
     spaced_name: rune.spaced_name,
-    block_hash: rune.block_hash,
-    block_height: parseInt(rune.block_height),
-    tx_index: rune.tx_index,
-    tx_id: rune.tx_id,
     divisibility: rune.divisibility,
-    premine: divisibility(rune.premine, rune.divisibility),
     symbol: rune.symbol,
     mint_terms: {
       amount: rune.terms_amount ? divisibility(rune.terms_amount, rune.divisibility) : null,
@@ -41,6 +36,7 @@ export function parseEtchingResponse(rune: DbRuneWithChainTip): EtchingResponse 
       offset_end: rune.terms_offset_end ? parseInt(rune.terms_offset_end) : null,
     },
     supply: {
+      premine: divisibility(rune.premine, rune.divisibility),
       current: divisibility(
         BigNumber(rune.minted).plus(rune.burned).plus(rune.premine),
         rune.divisibility
@@ -55,7 +51,13 @@ export function parseEtchingResponse(rune: DbRuneWithChainTip): EtchingResponse 
       mintable,
     },
     turbo: rune.turbo,
-    timestamp: rune.timestamp,
+    location: {
+      block_hash: rune.block_hash,
+      block_height: parseInt(rune.block_height),
+      tx_index: rune.tx_index,
+      tx_id: rune.tx_id,
+      timestamp: rune.timestamp,
+    },
   };
 }
 
@@ -66,17 +68,19 @@ export function parseActivityResponse(entry: DbItemWithRune<DbLedgerEntry>): Act
       name: entry.name,
       spaced_name: entry.spaced_name,
     },
-    block_hash: entry.block_hash,
-    block_height: parseInt(entry.block_height),
-    tx_index: entry.tx_index,
-    tx_id: entry.tx_id,
-    vout: entry.output,
-    output: `${entry.tx_id}:${entry.output}`,
     operation: entry.operation,
     address: entry.address ?? undefined,
     receiver_address: entry.receiver_address ?? undefined,
-    timestamp: entry.timestamp,
-    amount: divisibility(entry.amount, entry.divisibility),
+    amount: entry.amount ? divisibility(entry.amount, entry.divisibility) : undefined,
+    location: {
+      block_hash: entry.block_hash,
+      block_height: parseInt(entry.block_height),
+      tx_index: entry.tx_index,
+      tx_id: entry.tx_id,
+      vout: entry.output ?? undefined,
+      output: entry.output ? `${entry.tx_id}:${entry.output}` : undefined,
+      timestamp: entry.timestamp,
+    },
   };
 }
 

@@ -1,4 +1,4 @@
-CREATE TYPE ledger_operation AS ENUM ('mint', 'burn', 'send', 'receive');
+CREATE TYPE ledger_operation AS ENUM ('etching', 'mint', 'burn', 'send', 'receive');
 
 CREATE TABLE IF NOT EXISTS ledger (
     rune_id                 TEXT NOT NULL,
@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS ledger (
     output                  BIGINT,
     address                 TEXT,
     receiver_address        TEXT,
-    amount                  NUMERIC NOT NULL,
+    amount                  NUMERIC,
     operation               ledger_operation NOT NULL,
     timestamp               BIGINT NOT NULL
 );

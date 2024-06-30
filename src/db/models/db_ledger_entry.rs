@@ -19,14 +19,14 @@ pub struct DbLedgerEntry {
     pub output: Option<PgBigIntU32>,
     pub address: Option<String>,
     pub receiver_address: Option<String>,
-    pub amount: PgNumericU128,
+    pub amount: Option<PgNumericU128>,
     pub operation: DbLedgerOperation,
     pub timestamp: PgBigIntU32,
 }
 
 impl DbLedgerEntry {
     pub fn from_values(
-        amount: u128,
+        amount: Option<u128>,
         rune_id: RuneId,
         block_hash: &String,
         block_height: u64,
@@ -49,7 +49,7 @@ impl DbLedgerEntry {
             output: output.map(|i| PgBigIntU32(i)),
             address: address.cloned(),
             receiver_address: receiver_address.cloned(),
-            amount: PgNumericU128(amount),
+            amount: amount.map(|i| PgNumericU128(i)),
             operation,
             timestamp: PgBigIntU32(timestamp),
         }

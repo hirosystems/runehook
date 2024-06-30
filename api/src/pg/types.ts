@@ -34,7 +34,7 @@ export type DbRune = {
 
 export type DbRuneWithChainTip = DbRune & { chain_tip: string };
 
-type DbLedgerOperation = 'mint' | 'burn' | 'send' | 'receive';
+type DbLedgerOperation = 'etching' | 'mint' | 'burn' | 'send' | 'receive';
 
 export type DbLedgerEntry = {
   rune_id: string;
@@ -42,10 +42,10 @@ export type DbLedgerEntry = {
   block_height: string;
   tx_index: number;
   tx_id: string;
-  output: number;
+  output: number | null;
   address: string | null;
   receiver_address: string | null;
-  amount: string;
+  amount: string | null;
   operation: DbLedgerOperation;
   timestamp: number;
 };

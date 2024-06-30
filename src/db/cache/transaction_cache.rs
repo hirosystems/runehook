@@ -134,7 +134,7 @@ impl TransactionCache {
             for balance in unallocated {
                 results.push(new_ledger_entry(
                     &self.location,
-                    balance.amount,
+                    Some(balance.amount),
                     *rune_id,
                     None,
                     balance.address.as_ref(),
@@ -178,7 +178,11 @@ impl TransactionCache {
         results
     }
 
-    pub fn apply_etching(&mut self, etching: &Etching, number: u32) -> (RuneId, DbRune) {
+    pub fn apply_etching(
+        &mut self,
+        etching: &Etching,
+        number: u32,
+    ) -> (RuneId, DbRune, DbLedgerEntry) {
         let rune_id = self.location.rune_id();
         let db_rune = DbRune::from_etching(etching, number, &self.location);
         self.etching = Some(db_rune.clone());
@@ -192,15 +196,39 @@ impl TransactionCache {
                 },
             );
         }
-        (rune_id, db_rune)
+        let entry = new_ledger_entry(
+            &self.location,
+            None,
+            rune_id,
+            None,
+            None,
+            None,
+            DbLedgerOperation::Etching,
+            &mut self.next_event_index,
+        );
+        (rune_id, db_rune, entry)
     }
 
-    pub fn apply_cenotaph_etching(&mut self, rune: &Rune, number: u32) -> (RuneId, DbRune) {
+    pub fn apply_cenotaph_etching(
+        &mut self,
+        rune: &Rune,
+        number: u32,
+    ) -> (RuneId, DbRune, DbLedgerEntry) {
         let rune_id = self.location.rune_id();
         // If the runestone that produced the cenotaph contained an etching, the etched rune has supply zero and is unmintable.
         let db_rune = DbRune::from_cenotaph_etching(rune, number, &self.location);
         self.etching = Some(db_rune.clone());
-        (rune_id, db_rune)
+        let entry = new_ledger_entry(
+            &self.location,
+            None,
+            rune_id,
+            None,
+            None,
+            None,
+            DbLedgerOperation::Etching,
+            &mut self.next_event_index,
+        );
+        (rune_id, db_rune, entry)
     }
 
     pub fn apply_mint(
@@ -231,7 +259,7 @@ impl TransactionCache {
         );
         Some(new_ledger_entry(
             &self.location,
-            terms_amount.0,
+            Some(terms_amount.0),
             rune_id.clone(),
             None,
             None,
@@ -263,7 +291,7 @@ impl TransactionCache {
         // This entry does not go in the input runes, it gets burned immediately.
         Some(new_ledger_entry(
             &self.location,
-            terms_amount.0,
+            Some(terms_amount.0),
             rune_id.clone(),
             None,
             None,
@@ -455,7 +483,7 @@ fn is_valid_mint(db_rune: &DbRune, total_mints: u128, location: &TransactionLoca
 /// Creates a new ledger entry.
 fn new_ledger_entry(
     location: &TransactionLocation,
-    amount: u128,
+    amount: Option<u128>,
     rune_id: RuneId,
     output: Option<u32>,
     address: Option<&String>,
@@ -559,7 +587,7 @@ fn move_rune_balance_to_output(
     if receiver_address.is_some() && total_sent > 0 {
         results.push(new_ledger_entry(
             location,
-            total_sent,
+            Some(total_sent),
             *rune_id,
             output,
             receiver_address.as_ref(),
@@ -581,7 +609,7 @@ fn move_rune_balance_to_output(
     for (balance_taken, sender_address) in senders.iter() {
         results.push(new_ledger_entry(
             location,
-            *balance_taken,
+            Some(*balance_taken),
             *rune_id,
             output,
             Some(sender_address),
@@ -673,12 +701,12 @@ mod test {
         let receive = results.get(0).unwrap();
         assert_eq!(receive.event_index.0, 0u32);
         assert_eq!(receive.operation, DbLedgerOperation::Receive);
-        assert_eq!(receive.amount.0, 2000u128);
+        assert_eq!(receive.amount.unwrap().0, 2000u128);
 
         let send = results.get(1).unwrap();
         assert_eq!(send.event_index.0, 1u32);
         assert_eq!(send.operation, DbLedgerOperation::Send);
-        assert_eq!(send.amount.0, 1000u128);
+        assert_eq!(send.amount.unwrap().0, 1000u128);
 
         assert_eq!(results.len(), 2);
     }

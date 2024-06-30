@@ -1,6 +1,6 @@
 import { SwaggerOptions } from '@fastify/swagger';
 import { Nullable, Optional, SERVER_VERSION } from '@hirosystems/api-toolkit';
-import { Static, TSchema, Type } from '@sinclair/typebox';
+import { Static, Type } from '@sinclair/typebox';
 import { TypeCompiler } from '@sinclair/typebox/compiler';
 
 export const OpenApiSchemaOptions: SwaggerOptions = {
@@ -116,24 +116,32 @@ export const ApiStatusResponse = Type.Object(
   { title: 'Api Status Response' }
 );
 
+const LocationDetailResponseSchema = Type.Object({
+  block_hash: Type.String({
+    examples: ['00000000000000000000c9787573a1f1775a2b56b403a2d0c7957e9a5bc754bb'],
+  }),
+  block_height: Type.Integer({ examples: [840000] }),
+  tx_id: Type.String({
+    examples: ['2bb85f4b004be6da54f766c17c1e855187327112c231ef2ff35ebad0ea67c69e'],
+  }),
+  tx_index: Type.Integer({ examples: [1] }),
+  vout: Optional(Type.Integer({ examples: [100] })),
+  output: Optional(
+    Type.String({
+      examples: ['2bb85f4b004be6da54f766c17c1e855187327112c231ef2ff35ebad0ea67c69e:100'],
+    })
+  ),
+  timestamp: Type.Integer({ examples: [1713571767] }),
+});
+
 export const EtchingResponseSchema = Type.Object({
   id: Type.String({ examples: ['840000:1'] }),
   name: Type.String({ examples: ['ZZZZZFEHUZZZZZ'] }),
   spaced_name: Type.String({ examples: ['Z•Z•Z•Z•Z•FEHU•Z•Z•Z•Z•Z'] }),
   number: Type.Integer({ examples: [1] }),
-  block_hash: Type.String({
-    examples: ['00000000000000000000c9787573a1f1775a2b56b403a2d0c7957e9a5bc754bb'],
-  }),
-  block_height: Type.Integer({ examples: [840000] }),
-  tx_index: Type.Integer({ examples: [1] }),
-  tx_id: Type.String({
-    examples: ['2bb85f4b004be6da54f766c17c1e855187327112c231ef2ff35ebad0ea67c69e'],
-  }),
   divisibility: Type.Integer({ examples: [2] }),
-  premine: Type.String({ examples: ['11000000000'] }),
   symbol: Type.String({ examples: ['ᚠ'] }),
   turbo: Type.Boolean({ examples: [false] }),
-  timestamp: Type.Integer({ examples: [1713571767] }),
   mint_terms: Type.Object({
     amount: Nullable(Type.String({ examples: ['100'] })),
     cap: Nullable(Type.String({ examples: ['1111111'] })),
@@ -150,7 +158,9 @@ export const EtchingResponseSchema = Type.Object({
     mintable: Type.Boolean(),
     burned: Type.String({ examples: ['5100'] }),
     total_burns: Type.String({ examples: ['17'] }),
+    premine: Type.String({ examples: ['11000000000'] }),
   }),
+  location: LocationDetailResponseSchema,
 });
 export type EtchingResponse = Static<typeof EtchingResponseSchema>;
 
@@ -163,30 +173,19 @@ const RuneDetailResponseSchema = Type.Object({
 });
 
 export const SimpleActivityResponseSchema = Type.Object({
-  block_hash: Type.String({
-    examples: ['00000000000000000000c9787573a1f1775a2b56b403a2d0c7957e9a5bc754bb'],
-  }),
-  block_height: Type.Integer({ examples: [840000] }),
-  tx_index: Type.Integer({ examples: [1] }),
-  tx_id: Type.String({
-    examples: ['2bb85f4b004be6da54f766c17c1e855187327112c231ef2ff35ebad0ea67c69e'],
-  }),
-  vout: Type.Integer({ examples: [100] }),
-  output: Type.String({
-    examples: ['2bb85f4b004be6da54f766c17c1e855187327112c231ef2ff35ebad0ea67c69e:100'],
-  }),
   address: Optional(Type.String({ examples: ['bc1q7jd477wc5s88hsvenr0ddtatsw282hfjzg59wz'] })),
-  receiver_address: Type.Optional(
+  receiver_address: Optional(
     Type.String({ examples: ['bc1pgdrveee2v4ez95szaakw5gkd8eennv2dddf9rjdrlt6ch56lzrrsxgvazt'] })
   ),
-  amount: Type.String({ examples: ['11000000000'] }),
+  amount: Optional(Type.String({ examples: ['11000000000'] })),
   operation: Type.Union([
+    Type.Literal('etching'),
     Type.Literal('mint'),
     Type.Literal('burn'),
     Type.Literal('send'),
     Type.Literal('receive'),
   ]),
-  timestamp: Type.Integer({ examples: [1713571767] }),
+  location: LocationDetailResponseSchema,
 });
 export type SimpleActivityResponse = Static<typeof SimpleActivityResponseSchema>;
 

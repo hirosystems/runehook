@@ -122,13 +122,14 @@ impl IndexCache {
         _db_tx: &mut Transaction<'_>,
         ctx: &Context,
     ) {
-        let (rune_id, db_rune) = self.tx_cache.apply_etching(etching, self.next_rune_number);
+        let (rune_id, db_rune, entry) = self.tx_cache.apply_etching(etching, self.next_rune_number);
         info!(
             ctx.expect_logger(),
             "Etching {} ({}) {}", db_rune.spaced_name, db_rune.id, self.tx_cache.location
         );
         self.db_cache.runes.push(db_rune.clone());
         self.rune_cache.put(rune_id, db_rune);
+        self.add_ledger_entries_to_db_cache(&vec![entry]);
         self.next_rune_number += 1;
     }
 
@@ -138,7 +139,7 @@ impl IndexCache {
         _db_tx: &mut Transaction<'_>,
         ctx: &Context,
     ) {
-        let (rune_id, db_rune) = self
+        let (rune_id, db_rune, entry) = self
             .tx_cache
             .apply_cenotaph_etching(rune, self.next_rune_number);
         info!(
@@ -147,6 +148,7 @@ impl IndexCache {
         );
         self.db_cache.runes.push(db_rune.clone());
         self.rune_cache.put(rune_id, db_rune);
+        self.add_ledger_entries_to_db_cache(&vec![entry]);
         self.next_rune_number += 1;
     }
 
@@ -222,7 +224,10 @@ impl IndexCache {
         for entry in entries.iter() {
             info!(
                 ctx.expect_logger(),
-                "Edict {} {} {}", db_rune.spaced_name, entry.amount.0, self.tx_cache.location
+                "Edict {} {} {}",
+                db_rune.spaced_name,
+                entry.amount.unwrap().0,
+                self.tx_cache.location
             );
         }
         self.add_ledger_entries_to_db_cache(&entries);
@@ -329,27 +334,34 @@ impl IndexCache {
         self.db_cache.ledger_entries.extend(entries.clone());
         for entry in entries.iter() {
             match entry.operation {
+                DbLedgerOperation::Etching => {}
                 DbLedgerOperation::Mint => {
                     self.db_cache
                         .rune_updates
                         .entry(entry.rune_id.clone())
                         .and_modify(|i| {
-                            i.minted += entry.amount;
+                            i.minted += entry.amount.unwrap();
                             i.total_mints += 1;
                             i.total_operations += 1;
                         })
-                        .or_insert(DbRuneUpdate::from_mint(entry.rune_id.clone(), entry.amount));
+                        .or_insert(DbRuneUpdate::from_mint(
+                            entry.rune_id.clone(),
+                            entry.amount.unwrap(),
+                        ));
                 }
                 DbLedgerOperation::Burn => {
                     self.db_cache
                         .rune_updates
                         .entry(entry.rune_id.clone())
                         .and_modify(|i| {
-                            i.burned += entry.amount;
+                            i.burned += entry.amount.unwrap();
                             i.total_burns += 1;
                             i.total_operations += 1;
                         })
-                        .or_insert(DbRuneUpdate::from_burn(entry.rune_id.clone(), entry.amount));
+                        .or_insert(DbRuneUpdate::from_burn(
+                            entry.rune_id.clone(),
+                            entry.amount.unwrap(),
+                        ));
                 }
                 DbLedgerOperation::Send => {
                     self.db_cache
@@ -361,11 +373,11 @@ impl IndexCache {
                         self.db_cache
                             .balance_deductions
                             .entry((entry.rune_id.clone(), address.clone()))
-                            .and_modify(|i| i.balance += entry.amount)
+                            .and_modify(|i| i.balance += entry.amount.unwrap())
                             .or_insert(DbBalanceUpdate::from_operation(
                                 entry.rune_id.clone(),
                                 address,
-                                entry.amount,
+                                entry.amount.unwrap(),
                             ));
                     }
                 }
@@ -379,11 +391,11 @@ impl IndexCache {
                         self.db_cache
                             .balance_increases
                             .entry((entry.rune_id.clone(), address.clone()))
-                            .and_modify(|i| i.balance += entry.amount)
+                            .and_modify(|i| i.balance += entry.amount.unwrap())
                             .or_insert(DbBalanceUpdate::from_operation(
                                 entry.rune_id.clone(),
                                 address,
-                                entry.amount,
+                                entry.amount.unwrap(),
                             ));
                     }
 
@@ -392,7 +404,7 @@ impl IndexCache {
                     let rune_id = RuneId::from_str(entry.rune_id.as_str()).unwrap();
                     let balance = InputRuneBalance {
                         address: entry.address.clone(),
-                        amount: entry.amount.0,
+                        amount: entry.amount.unwrap().0,
                     };
                     if let Some(v) = self.output_cache.get_mut(&k) {
                         if let Some(rune_balance) = v.get_mut(&rune_id) {
