@@ -4,7 +4,9 @@ import { FastifyPluginAsync } from 'fastify';
 import { Server } from 'http';
 import { PgStore } from '../pg/pg-store';
 import { EtchingRoutes } from './routes/etchings';
-import { AddressRoutes } from './routes/address';
+import { AddressRoutes } from './routes/addresses';
+import { TransactionRoutes } from './routes/transactions';
+import { BlockRoutes } from './routes/blocks';
 
 export const Api: FastifyPluginAsync<
   Record<never, never>,
@@ -13,6 +15,8 @@ export const Api: FastifyPluginAsync<
 > = async fastify => {
   await fastify.register(EtchingRoutes);
   await fastify.register(AddressRoutes);
+  await fastify.register(TransactionRoutes);
+  await fastify.register(BlockRoutes);
 };
 
 export async function buildApiServer(args: { db: PgStore }) {

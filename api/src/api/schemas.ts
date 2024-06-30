@@ -33,20 +33,20 @@ export const OpenApiSchemaOptions: SwaggerOptions = {
 // Parameters
 // ==========================
 
-export const OffsetParamSchema = Type.Integer({
+export const OffsetSchema = Type.Integer({
   minimum: 0,
   title: 'Offset',
   description: 'Result offset',
 });
-export type OffsetParam = Static<typeof OffsetParamSchema>;
+export type Offset = Static<typeof OffsetSchema>;
 
-export const LimitParamSchema = Type.Integer({
+export const LimitSchema = Type.Integer({
   minimum: 1,
   maximum: 60,
   title: 'Limit',
   description: 'Results per page',
 });
-export type LimitParam = Static<typeof LimitParamSchema>;
+export type Limit = Static<typeof LimitSchema>;
 
 const RuneIdSchema = Type.RegEx(/^[0-9]+:[0-9]+$/);
 const RuneNameSchema = Type.RegEx(/^[A-Z]+$/);
@@ -54,11 +54,47 @@ export const RuneNameSchemaCType = TypeCompiler.Compile(RuneNameSchema);
 const RuneSpacedNameSchema = Type.RegEx(/^[A-Z](•[A-Z]+)+$/);
 export const RuneSpacedNameSchemaCType = TypeCompiler.Compile(RuneSpacedNameSchema);
 
-export const EtchingParamSchema = Type.Union([RuneIdSchema, RuneNameSchema, RuneSpacedNameSchema]);
-export type EtchingParam = Static<typeof EtchingParamSchema>;
+export const RuneSchema = Type.Union([RuneIdSchema, RuneNameSchema, RuneSpacedNameSchema]);
+export type Rune = Static<typeof RuneSchema>;
 
-export const AddressParamSchema = Type.String();
-export type AddressParam = Static<typeof AddressParamSchema>;
+export const AddressSchema = Type.String({
+  title: 'Address',
+  description: 'Bitcoin address',
+  examples: ['bc1p8aq8s3z9xl87e74twfk93mljxq6alv4a79yheadx33t9np4g2wkqqt8kc5'],
+});
+export type Address = Static<typeof AddressSchema>;
+
+export const TransactionIdSchema = Type.RegEx(/^[a-fA-F0-9]{64}$/, {
+  title: 'Transaction ID',
+  description: 'A transaction ID',
+  examples: ['8f46f0d4ef685e650727e6faf7e30f23b851a7709714ec774f7909b3fb5e604c'],
+});
+export type TransactionId = Static<typeof TransactionIdSchema>;
+
+export const TransactionOutputSchema = Type.RegEx(/^[a-fA-F0-9]{64}:[0-9]+$/, {
+  title: 'Transaction Output',
+  description: 'A transaction output',
+  examples: ['8f46f0d4ef685e650727e6faf7e30f23b851a7709714ec774f7909b3fb5e604c:0'],
+});
+export type TransactionOutput = Static<typeof TransactionOutputSchema>;
+
+export const BlockHeightSchema = Type.RegEx(/^[0-9]+$/, {
+  title: 'Block Height',
+  description: 'Bitcoin block height',
+  examples: [777678],
+});
+export const BlockHeightCType = TypeCompiler.Compile(BlockHeightSchema);
+export type BlockHeight = Static<typeof BlockHeightSchema>;
+
+const BlockHashSchema = Type.RegEx(/^[0]{8}[a-fA-F0-9]{56}$/, {
+  title: 'Block Hash',
+  description: 'Bitcoin block hash',
+  examples: ['0000000000000000000452773967cdd62297137cdaf79950c5e8bb0c62075133'],
+});
+export type BlockHash = Static<typeof BlockHashSchema>;
+
+export const BlockSchema = Type.Union([BlockHeightSchema, BlockHashSchema]);
+export type Block = Static<typeof BlockSchema>;
 
 // ==========================
 // Responses

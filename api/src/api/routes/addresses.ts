@@ -3,9 +3,9 @@ import { Type } from '@sinclair/typebox';
 import { FastifyPluginCallback } from 'fastify';
 import { Server } from 'http';
 import {
-  AddressParamSchema,
-  LimitParamSchema,
-  OffsetParamSchema,
+  AddressSchema,
+  LimitSchema,
+  OffsetSchema,
   BalanceResponseSchema,
 } from '../schemas';
 import { parseBalanceResponse } from '../util/helpers';
@@ -20,7 +20,7 @@ export const AddressRoutes: FastifyPluginCallback<
   fastify.addHook('preHandler', handleCache);
 
   fastify.get(
-    '/address/:address/balances',
+    '/addresses/:address/balances',
     {
       schema: {
         operationId: 'getAddressBalances',
@@ -28,11 +28,11 @@ export const AddressRoutes: FastifyPluginCallback<
         description: 'Retrieves a paginated list of address balances',
         tags: ['Runes'],
         params: Type.Object({
-          address: AddressParamSchema,
+          address: AddressSchema,
         }),
         querystring: Type.Object({
-          offset: Optional(OffsetParamSchema),
-          limit: Optional(LimitParamSchema),
+          offset: Optional(OffsetSchema),
+          limit: Optional(LimitSchema),
         }),
         response: {
           200: PaginatedResponse(BalanceResponseSchema, 'Paginated balances response'),

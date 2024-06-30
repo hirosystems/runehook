@@ -36,9 +36,7 @@ export function parseEtchingResponse(rune: DbRune): EtchingResponse {
   };
 }
 
-export function parseEtchingActivityResponse(
-  entry: DbItemWithRune<DbLedgerEntry>
-): ActivityResponse {
+export function parseActivityResponse(entry: DbItemWithRune<DbLedgerEntry>): ActivityResponse {
   return {
     rune: {
       id: entry.rune_id,

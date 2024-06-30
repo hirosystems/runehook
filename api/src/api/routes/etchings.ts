@@ -4,20 +4,16 @@ import { Value } from '@sinclair/typebox/value';
 import { FastifyPluginCallback } from 'fastify';
 import { Server } from 'http';
 import {
-  AddressParamSchema,
-  EtchingParamSchema,
+  AddressSchema,
+  RuneSchema,
   EtchingResponseSchema,
-  LimitParamSchema,
+  LimitSchema,
   NotFoundResponse,
-  OffsetParamSchema,
+  OffsetSchema,
   SimpleBalanceResponseSchema,
   SimpleActivityResponseSchema,
 } from '../schemas';
-import {
-  parseBalanceResponse,
-  parseEtchingActivityResponse,
-  parseEtchingResponse,
-} from '../util/helpers';
+import { parseBalanceResponse, parseActivityResponse, parseEtchingResponse } from '../util/helpers';
 import { Optional, PaginatedResponse } from '@hirosystems/api-toolkit';
 import { handleCache } from '../util/cache';
 
@@ -37,8 +33,8 @@ export const EtchingRoutes: FastifyPluginCallback<
         description: 'Retrieves a paginated list of rune etchings',
         tags: ['Runes'],
         querystring: Type.Object({
-          offset: Optional(OffsetParamSchema),
-          limit: Optional(LimitParamSchema),
+          offset: Optional(OffsetSchema),
+          limit: Optional(LimitSchema),
         }),
         response: {
           200: PaginatedResponse(EtchingResponseSchema, 'Paginated etchings response'),
@@ -67,7 +63,7 @@ export const EtchingRoutes: FastifyPluginCallback<
         description: 'Retrieves information for a Rune etching',
         tags: ['Runes'],
         params: Type.Object({
-          etching: EtchingParamSchema,
+          etching: RuneSchema,
         }),
         response: {
           200: EtchingResponseSchema,
@@ -94,11 +90,11 @@ export const EtchingRoutes: FastifyPluginCallback<
         description: 'Retrieves all activity for a Rune',
         tags: ['Runes'],
         params: Type.Object({
-          etching: EtchingParamSchema,
+          etching: RuneSchema,
         }),
         querystring: Type.Object({
-          offset: Optional(OffsetParamSchema),
-          limit: Optional(LimitParamSchema),
+          offset: Optional(OffsetSchema),
+          limit: Optional(LimitSchema),
         }),
         response: {
           200: PaginatedResponse(SimpleActivityResponseSchema, 'Paginated activity response'),
@@ -113,7 +109,7 @@ export const EtchingRoutes: FastifyPluginCallback<
         limit,
         offset,
         total: results.total,
-        results: results.results.map(r => parseEtchingActivityResponse(r)),
+        results: results.results.map(r => parseActivityResponse(r)),
       });
     }
   );
@@ -127,12 +123,12 @@ export const EtchingRoutes: FastifyPluginCallback<
         description: 'Retrieves all activity for a Rune address',
         tags: ['Runes'],
         params: Type.Object({
-          etching: EtchingParamSchema,
-          address: AddressParamSchema,
+          etching: RuneSchema,
+          address: AddressSchema,
         }),
         querystring: Type.Object({
-          offset: Optional(OffsetParamSchema),
-          limit: Optional(LimitParamSchema),
+          offset: Optional(OffsetSchema),
+          limit: Optional(LimitSchema),
         }),
         response: {
           200: PaginatedResponse(SimpleActivityResponseSchema, 'Paginated activity response'),
@@ -152,7 +148,7 @@ export const EtchingRoutes: FastifyPluginCallback<
         limit,
         offset,
         total: results.total,
-        results: results.results.map(r => parseEtchingActivityResponse(r)),
+        results: results.results.map(r => parseActivityResponse(r)),
       });
     }
   );
@@ -166,11 +162,11 @@ export const EtchingRoutes: FastifyPluginCallback<
         description: 'Retrieves a paginated list of holders for a Rune',
         tags: ['Runes'],
         params: Type.Object({
-          etching: EtchingParamSchema,
+          etching: RuneSchema,
         }),
         querystring: Type.Object({
-          offset: Optional(OffsetParamSchema),
-          limit: Optional(LimitParamSchema),
+          offset: Optional(OffsetSchema),
+          limit: Optional(LimitSchema),
         }),
         response: {
           200: PaginatedResponse(SimpleBalanceResponseSchema, 'Paginated holders response'),
@@ -199,8 +195,8 @@ export const EtchingRoutes: FastifyPluginCallback<
         description: 'Retrieves holder balance for a specific Rune',
         tags: ['Runes'],
         params: Type.Object({
-          etching: EtchingParamSchema,
-          address: AddressParamSchema,
+          etching: RuneSchema,
+          address: AddressSchema,
         }),
         response: {
           404: NotFoundResponse,

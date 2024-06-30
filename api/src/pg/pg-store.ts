@@ -15,23 +15,35 @@ import {
   DbRune,
 } from './types';
 import {
-  AddressParam,
-  EtchingParam,
-  LimitParam,
-  OffsetParam,
+  Address,
+  BlockHeightCType,
+  Block,
+  Rune,
+  Limit,
+  Offset,
   RuneNameSchemaCType,
   RuneSpacedNameSchemaCType,
+  TransactionId,
 } from '../api/schemas';
 
-function getEtchingIdWhereCondition(sql: PgSqlClient, id: string, prefix?: string): PgSqlQuery {
+function runeFilter(sql: PgSqlClient, etching: string, prefix?: string): PgSqlQuery {
   const p = prefix ? `${prefix}.` : '';
-  let idParam = sql`${sql(`${p}id`)} = ${id}`;
-  if (RuneNameSchemaCType.Check(id)) {
-    idParam = sql`${sql(`${p}name`)} = ${id}`;
-  } else if (RuneSpacedNameSchemaCType.Check(id)) {
-    idParam = sql`${sql(`${p}spaced_name`)} = ${id}`;
+  let filter = sql`${sql(`${p}id`)} = ${etching}`;
+  if (RuneNameSchemaCType.Check(etching)) {
+    filter = sql`${sql(`${p}name`)} = ${etching}`;
+  } else if (RuneSpacedNameSchemaCType.Check(etching)) {
+    filter = sql`${sql(`${p}spaced_name`)} = ${etching}`;
   }
-  return idParam;
+  return filter;
+}
+
+function blockFilter(sql: PgSqlClient, block: string, prefix?: string): PgSqlQuery {
+  const p = prefix ? `${prefix}.` : '';
+  let filter = sql`${sql(`${p}block_hash`)} = ${block}`;
+  if (BlockHeightCType.Check(block)) {
+    filter = sql`${sql(`${p}block_height`)} = ${block}`;
+  }
+  return filter;
 }
 
 export class PgStore extends BasePgStore {
@@ -67,15 +79,15 @@ export class PgStore extends BasePgStore {
     return result[0]?.etag;
   }
 
-  async getEtching(id: EtchingParam): Promise<DbRune | undefined> {
+  async getEtching(id: Rune): Promise<DbRune | undefined> {
     const result = await this.sql<DbRune[]>`
-      SELECT * FROM runes WHERE ${getEtchingIdWhereCondition(this.sql, id)}
+      SELECT * FROM runes WHERE ${runeFilter(this.sql, id)}
     `;
     if (result.count == 0) return undefined;
     return result[0];
   }
 
-  async getEtchings(offset: OffsetParam, limit: LimitParam): Promise<DbPaginatedResult<DbRune>> {
+  async getEtchings(offset: Offset, limit: Limit): Promise<DbPaginatedResult<DbRune>> {
     const results = await this.sql<DbCountedQueryResult<DbRune>[]>`
       WITH rune_count AS (SELECT COALESCE(MAX(number), 0) + 1 AS total FROM runes)
       SELECT *, (SELECT total FROM rune_count)
@@ -89,17 +101,18 @@ export class PgStore extends BasePgStore {
     };
   }
 
-  async getRuneActivity(
-    id: EtchingParam,
-    offset: OffsetParam,
-    limit: LimitParam
+  private async getActivity(
+    filter: PgSqlQuery,
+    count: PgSqlQuery,
+    offset: Offset,
+    limit: Limit
   ): Promise<DbPaginatedResult<DbItemWithRune<DbLedgerEntry>>> {
     const results = await this.sql<DbCountedQueryResult<DbItemWithRune<DbLedgerEntry>>[]>`
-      SELECT l.*, r.name, r.spaced_name, r.divisibility, r.total_operations AS total
+      SELECT l.*, r.name, r.spaced_name, r.divisibility, ${count} AS total
       FROM ledger AS l
       INNER JOIN runes AS r ON r.id = l.rune_id
-      WHERE ${getEtchingIdWhereCondition(this.sql, id, 'r')}
-      ORDER BY l.block_height DESC, l.tx_index DESC
+      WHERE ${filter}
+      ORDER BY l.block_height DESC, l.tx_index DESC, l.event_index DESC
       OFFSET ${offset} LIMIT ${limit}
     `;
     return {
@@ -108,37 +121,47 @@ export class PgStore extends BasePgStore {
     };
   }
 
-  async getRuneAddressActivity(
-    id: EtchingParam,
-    address: AddressParam,
-    offset: OffsetParam,
-    limit: LimitParam
-  ): Promise<DbPaginatedResult<DbItemWithRune<DbLedgerEntry>>> {
-    const results = await this.sql<DbCountedQueryResult<DbItemWithRune<DbLedgerEntry>>[]>`
-      SELECT l.*, r.name, r.spaced_name, r.divisibility, COUNT(*) OVER() AS total
-      FROM ledger AS l
-      INNER JOIN runes AS r ON r.id = l.rune_id
-      WHERE ${getEtchingIdWhereCondition(this.sql, id, 'r')}
-        AND address = ${address}
-      ORDER BY l.block_height DESC, l.tx_index DESC
-      OFFSET ${offset} LIMIT ${limit}
-    `;
-    return {
-      total: results[0]?.total ?? 0,
-      results,
-    };
+  async getRuneActivity(runeId: Rune, offset: Offset, limit: Limit) {
+    return this.getActivity(
+      runeFilter(this.sql, runeId, 'r'),
+      this.sql`r.total_operations`,
+      offset,
+      limit
+    );
+  }
+
+  async getRuneAddressActivity(runeId: Rune, address: Address, offset: Offset, limit: Limit) {
+    return this.getActivity(
+      this.sql`${runeFilter(this.sql, runeId, 'r')} AND address = ${address}`,
+      this.sql`COUNT(*) OVER()`,
+      offset,
+      limit
+    );
+  }
+
+  async getTransactionActivity(txId: TransactionId, offset: Offset, limit: Limit) {
+    return this.getActivity(this.sql`l.tx_id = ${txId}`, this.sql`COUNT(*) OVER()`, offset, limit);
+  }
+
+  async getBlockActivity(block: Block, offset: Offset, limit: Limit) {
+    return this.getActivity(
+      blockFilter(this.sql, block, 'l'),
+      this.sql`COUNT(*) OVER()`,
+      offset,
+      limit
+    );
   }
 
   async getRuneHolders(
-    id: EtchingParam,
-    offset: OffsetParam,
-    limit: LimitParam
+    id: Rune,
+    offset: Offset,
+    limit: Limit
   ): Promise<DbPaginatedResult<DbItemWithRune<DbBalance>>> {
     const results = await this.sql<DbCountedQueryResult<DbItemWithRune<DbBalance>>[]>`
       SELECT b.*, r.name, r.spaced_name, r.divisibility, COUNT(*) OVER() AS total
       FROM balances AS b
       INNER JOIN runes AS r ON r.id = b.rune_id
-      WHERE ${getEtchingIdWhereCondition(this.sql, id, 'r')}
+      WHERE ${runeFilter(this.sql, id, 'r')}
       ORDER BY b.balance DESC
       OFFSET ${offset} LIMIT ${limit}
     `;
@@ -149,22 +172,22 @@ export class PgStore extends BasePgStore {
   }
 
   async getRuneAddressBalance(
-    id: EtchingParam,
-    address: AddressParam
+    id: Rune,
+    address: Address
   ): Promise<DbItemWithRune<DbBalance> | undefined> {
     const results = await this.sql<DbItemWithRune<DbBalance>[]>`
       SELECT b.*, r.name, r.spaced_name, r.divisibility
       FROM balances AS b
       INNER JOIN runes AS r ON r.id = b.rune_id
-      WHERE ${getEtchingIdWhereCondition(this.sql, id, 'r')} AND address = ${address}
+      WHERE ${runeFilter(this.sql, id, 'r')} AND address = ${address}
     `;
     return results[0];
   }
 
   async getAddressBalances(
-    address: AddressParam,
-    offset: OffsetParam,
-    limit: LimitParam
+    address: Address,
+    offset: Offset,
+    limit: Limit
   ): Promise<DbPaginatedResult<DbItemWithRune<DbBalance>>> {
     const results = await this.sql<DbCountedQueryResult<DbItemWithRune<DbBalance>>[]>`
       SELECT b.*, r.name, r.spaced_name, r.divisibility, COUNT(*) OVER() AS total
