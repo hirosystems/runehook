@@ -2,12 +2,7 @@ import { TypeBoxTypeProvider } from '@fastify/type-provider-typebox';
 import { Type } from '@sinclair/typebox';
 import { FastifyPluginCallback } from 'fastify';
 import { Server } from 'http';
-import {
-  AddressSchema,
-  LimitSchema,
-  OffsetSchema,
-  BalanceResponseSchema,
-} from '../schemas';
+import { AddressSchema, LimitSchema, OffsetSchema, BalanceResponseSchema } from '../schemas';
 import { parseBalanceResponse } from '../util/helpers';
 import { Optional, PaginatedResponse } from '@hirosystems/api-toolkit';
 import { handleCache } from '../util/cache';

@@ -15,12 +15,14 @@ export const ApiGenerator: FastifyPluginAsync<
   TypeBoxTypeProvider
 > = async (fastify, options) => {
   await fastify.register(FastifySwagger, OpenApiSchemaOptions);
-  await fastify.register(Api, { prefix: '/ordinals/v1' });
+  await fastify.register(Api, { prefix: '/runes/v1' });
   if (!existsSync('./tmp')) {
     mkdirSync('./tmp');
   }
-  writeFileSync('./tmp/openapi.yaml', fastify.swagger({ yaml: true }));
-  writeFileSync('./tmp/openapi.json', JSON.stringify(fastify.swagger(), null, 2));
+  fastify.addHook('onReady', () => {
+    writeFileSync('./tmp/openapi.yaml', fastify.swagger({ yaml: true }));
+    writeFileSync('./tmp/openapi.json', JSON.stringify(fastify.swagger(), null, 2));
+  });
 };
 
 const fastify = Fastify({
@@ -29,5 +31,6 @@ const fastify = Fastify({
 }).withTypeProvider<TypeBoxTypeProvider>();
 
 void fastify.register(ApiGenerator).then(async () => {
+  await fastify.ready();
   await fastify.close();
 });
