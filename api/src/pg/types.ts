@@ -5,7 +5,7 @@ export type DbPaginatedResult<T> = {
 
 export type DbCountedQueryResult<T> = T & { total: number };
 
-export type DbRune = {
+type DbRune = {
   id: string;
   number: number;
   name: string;

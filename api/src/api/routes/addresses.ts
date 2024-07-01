@@ -19,9 +19,9 @@ export const AddressRoutes: FastifyPluginCallback<
     {
       schema: {
         operationId: 'getAddressBalances',
-        summary: 'Get address balances',
+        summary: 'Address balances',
         description: 'Retrieves a paginated list of address balances',
-        tags: ['Runes'],
+        tags: ['Balances'],
         params: Type.Object({
           address: AddressSchema,
         }),
