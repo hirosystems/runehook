@@ -25,7 +25,7 @@ jobs:
 
     environment:
       name: ${{ github.ref_name == 'main' && 'Production' || 'Preview' }}
-      url: ${{ github.ref_name == 'main' && 'https://runes-api.vercel.app/' || 'https://runes-api-pbcblockstack-blockstack.vercel.app/' }}
+      url: ${{ github.ref_name == 'main' && 'https://runes-api.vercel.app/' || 'https://runehook-pbcblockstack-hirosystems.vercel.app/' }}
 
     steps:
       - uses: actions/checkout@v2

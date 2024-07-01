@@ -19,9 +19,9 @@ export const TransactionRoutes: FastifyPluginCallback<
     {
       schema: {
         operationId: 'getTransactionActivity',
-        summary: 'Get transaction activity',
+        summary: 'Transaction activity',
         description: 'Retrieves a paginated list of rune activity for a transaction',
-        tags: ['Runes'],
+        tags: ['Activities'],
         params: Type.Object({
           tx_id: TransactionIdSchema,
         }),

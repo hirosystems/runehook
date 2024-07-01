@@ -29,9 +29,9 @@ export const EtchingRoutes: FastifyPluginCallback<
     {
       schema: {
         operationId: 'getEtchings',
-        summary: 'Get rune etchings',
+        summary: 'Rune etchings',
         description: 'Retrieves a paginated list of rune etchings',
-        tags: ['Runes'],
+        tags: ['Etchings'],
         querystring: Type.Object({
           offset: Optional(OffsetSchema),
           limit: Optional(LimitSchema),
@@ -61,7 +61,7 @@ export const EtchingRoutes: FastifyPluginCallback<
         operationId: 'getEtching',
         summary: 'Rune etching',
         description: 'Retrieves information for a Rune etching',
-        tags: ['Runes'],
+        tags: ['Etchings'],
         params: Type.Object({
           etching: RuneSchema,
         }),
@@ -86,9 +86,9 @@ export const EtchingRoutes: FastifyPluginCallback<
     {
       schema: {
         operationId: 'getRuneActivity',
-        summary: 'Rune rune activity',
+        summary: 'Rune activity',
         description: 'Retrieves all activity for a Rune',
-        tags: ['Runes'],
+        tags: ['Activities'],
         params: Type.Object({
           etching: RuneSchema,
         }),
@@ -119,9 +119,9 @@ export const EtchingRoutes: FastifyPluginCallback<
     {
       schema: {
         operationId: 'getRuneAddressActivity',
-        summary: 'Rune rune activity for address',
+        summary: 'Rune activity for address',
         description: 'Retrieves all activity for a Rune address',
-        tags: ['Runes'],
+        tags: ['Activities'],
         params: Type.Object({
           etching: RuneSchema,
           address: AddressSchema,
@@ -160,7 +160,7 @@ export const EtchingRoutes: FastifyPluginCallback<
         operationId: 'getRuneHolders',
         summary: 'Rune holders',
         description: 'Retrieves a paginated list of holders for a Rune',
-        tags: ['Runes'],
+        tags: ['Balances'],
         params: Type.Object({
           etching: RuneSchema,
         }),
@@ -193,7 +193,7 @@ export const EtchingRoutes: FastifyPluginCallback<
         operationId: 'getRuneHolderBalance',
         summary: 'Rune holder balance',
         description: 'Retrieves holder balance for a specific Rune',
-        tags: ['Runes'],
+        tags: ['Balances'],
         params: Type.Object({
           etching: RuneSchema,
           address: AddressSchema,
