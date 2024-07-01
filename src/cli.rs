@@ -143,7 +143,7 @@ async fn handle_command(opts: Opts, ctx: Context) -> Result<(), String> {
                 .map_err(|e| format!("unable to open file {}\n{}", file_path.display(), e))?;
             file.write_all(config_content.as_bytes())
                 .map_err(|e| format!("unable to write file {}\n{}", file_path.display(), e))?;
-            println!("Created file Chainhook.toml");
+            println!("Created file Runehook.toml");
         }
         Command::Service(ServiceCommand::Start(cmd)) => {
             let config = Config::from_file_path(&cmd.config_path)?;

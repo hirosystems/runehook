@@ -4,7 +4,6 @@
      /     /       
 
 * [Features](#features)
-* [API Documentation](#api-documentation)
 * [Quick Start](#quick-start)
     * [System Requirements](#system-requirements)
     * [Indexing Runes](#indexing-runes)
@@ -25,11 +24,9 @@
     * Rune activity per block, transaction, account
     * Balances and holders
 
-# API Documentation
+# Quick Start
 
 For instructions to run the REST API or endpoint reference, take a look at the [API README](./api/README.md).
-
-# Quick Start
 
 ## System Requirements
 
@@ -39,31 +36,22 @@ To run runehook, you will need:
 1. A local writeable Postgres database for data storage.
    * We recommended a 1TB volume size.
 
-## Indexing Runes
+## Getting started
 
-1. Clone the repo.
-
-1. Create an `.env` file and specify the appropriate values to configure the local
-API server, postgres DB and Ordhook node reachability. See
-[`env.ts`](https://github.com/hirosystems/ordinals-api/blob/develop/src/env.ts)
-for all available configuration options.
-
-1. Build the app (NodeJS v18+ is required)
+1. Clone the repo and install runehook
     ```
-    npm install
-    npm run build
+    cargo runehook-install
     ```
 
-1. Start the service
+1. Generate a new config file. Make sure to fill in the correct information.
     ```
-    npm run start
+    runehook config new
     ```
 
-### Stopping the API
-
-When shutting down, you should always prefer to send the `SIGINT` signal instead
-of `SIGKILL` so the service has time to finish any pending background work and
-all dependencies are gracefully disconnected.
+1. Start the indexing service
+    ```
+    runehook service start --config-path Runehook.toml
+    ```
 
 # Bugs and feature requests
 
