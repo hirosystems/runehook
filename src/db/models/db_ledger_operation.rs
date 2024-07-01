@@ -1,4 +1,4 @@
-use std::error::Error;
+use std::{error::Error, fmt};
 
 use bytes::BytesMut;
 use tokio_postgres::types::{to_sql_checked, FromSql, IsNull, ToSql, Type};
@@ -6,15 +6,23 @@ use tokio_postgres::types::{to_sql_checked, FromSql, IsNull, ToSql, Type};
 /// A value from the `ledger_operation` enum type.
 #[derive(Debug, Clone, PartialEq)]
 pub enum DbLedgerOperation {
+    Etching,
     Mint,
     Burn,
     Send,
     Receive,
 }
 
+impl fmt::Display for DbLedgerOperation {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.as_str().to_uppercase())
+    }
+}
+
 impl DbLedgerOperation {
     pub fn as_str(&self) -> &str {
         match self {
+            Self::Etching => "etching",
             Self::Mint => "mint",
             Self::Burn => "burn",
             Self::Send => "send",
@@ -28,6 +36,7 @@ impl std::str::FromStr for DbLedgerOperation {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
+            "etching" => Ok(DbLedgerOperation::Etching),
             "mint" => Ok(DbLedgerOperation::Mint),
             "burn" => Ok(DbLedgerOperation::Burn),
             "send" => Ok(DbLedgerOperation::Send),

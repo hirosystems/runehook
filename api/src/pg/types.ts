@@ -5,12 +5,13 @@ export type DbPaginatedResult<T> = {
 
 export type DbCountedQueryResult<T> = T & { total: number };
 
-export type DbRune = {
+type DbRune = {
   id: string;
   number: number;
   name: string;
   spaced_name: string;
-  block_height: number;
+  block_hash: string;
+  block_height: string;
   tx_index: number;
   tx_id: string;
   divisibility: number;
@@ -18,30 +19,33 @@ export type DbRune = {
   symbol: string;
   terms_amount: string | null;
   terms_cap: string | null;
-  terms_height_start: number | null;
-  terms_height_end: number | null;
-  terms_offset_start: number | null;
-  terms_offset_end: number | null;
+  terms_height_start: string | null;
+  terms_height_end: string | null;
+  terms_offset_start: string | null;
+  terms_offset_end: string | null;
   turbo: boolean;
   minted: string;
-  total_mints: number;
+  total_mints: string;
   burned: string;
-  total_burns: number;
-  total_operations: number;
+  total_burns: string;
+  total_operations: string;
   timestamp: number;
 };
 
-type DbLedgerOperation = 'mint' | 'burn' | 'send' | 'receive';
+export type DbRuneWithChainTip = DbRune & { chain_tip: string };
+
+type DbLedgerOperation = 'etching' | 'mint' | 'burn' | 'send' | 'receive';
 
 export type DbLedgerEntry = {
   rune_id: string;
-  block_height: number;
+  block_hash: string;
+  block_height: string;
   tx_index: number;
   tx_id: string;
-  output: number;
+  output: number | null;
   address: string | null;
   receiver_address: string | null;
-  amount: string;
+  amount: string | null;
   operation: DbLedgerOperation;
   timestamp: number;
 };

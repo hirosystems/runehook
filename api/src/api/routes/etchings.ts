@@ -4,39 +4,37 @@ import { Value } from '@sinclair/typebox/value';
 import { FastifyPluginCallback } from 'fastify';
 import { Server } from 'http';
 import {
-  BalanceResponseSchema,
-  EtchingActivityResponseSchema,
-  EtchingParamSchema,
+  AddressSchema,
+  RuneSchema,
   EtchingResponseSchema,
-  LimitParamSchema,
+  LimitSchema,
   NotFoundResponse,
-  OffsetParamSchema,
-  PaginatedResponse,
+  OffsetSchema,
+  SimpleBalanceResponseSchema,
+  SimpleActivityResponseSchema,
 } from '../schemas';
-import {
-  parseBalanceResponse,
-  parseEtchingActivityResponse,
-  parseEtchingResponse,
-} from '../util/helpers';
+import { parseBalanceResponse, parseActivityResponse, parseEtchingResponse } from '../util/helpers';
+import { Optional, PaginatedResponse } from '@hirosystems/api-toolkit';
+import { handleCache } from '../util/cache';
 
 export const EtchingRoutes: FastifyPluginCallback<
   Record<never, never>,
   Server,
   TypeBoxTypeProvider
 > = (fastify, options, done) => {
-  // fastify.addHook('preHandler', handleInscriptionTransfersCache);
+  fastify.addHook('preHandler', handleCache);
 
   fastify.get(
     '/etchings',
     {
       schema: {
         operationId: 'getEtchings',
-        summary: 'Get rune etchings',
+        summary: 'Rune etchings',
         description: 'Retrieves a paginated list of rune etchings',
-        tags: ['Runes'],
+        tags: ['Etchings'],
         querystring: Type.Object({
-          offset: Type.Optional(OffsetParamSchema),
-          limit: Type.Optional(LimitParamSchema),
+          offset: Optional(OffsetSchema),
+          limit: Optional(LimitSchema),
         }),
         response: {
           200: PaginatedResponse(EtchingResponseSchema, 'Paginated etchings response'),
@@ -63,9 +61,9 @@ export const EtchingRoutes: FastifyPluginCallback<
         operationId: 'getEtching',
         summary: 'Rune etching',
         description: 'Retrieves information for a Rune etching',
-        tags: ['Runes'],
+        tags: ['Etchings'],
         params: Type.Object({
-          etching: EtchingParamSchema,
+          etching: RuneSchema,
         }),
         response: {
           200: EtchingResponseSchema,
@@ -87,31 +85,70 @@ export const EtchingRoutes: FastifyPluginCallback<
     '/etchings/:etching/activity',
     {
       schema: {
-        operationId: 'getEtchingActivity',
-        summary: 'Rune etching activity',
+        operationId: 'getRuneActivity',
+        summary: 'Rune activity',
         description: 'Retrieves all activity for a Rune',
-        tags: ['Runes'],
+        tags: ['Activities'],
         params: Type.Object({
-          etching: EtchingParamSchema,
+          etching: RuneSchema,
         }),
         querystring: Type.Object({
-          offset: Type.Optional(OffsetParamSchema),
-          limit: Type.Optional(LimitParamSchema),
+          offset: Optional(OffsetSchema),
+          limit: Optional(LimitSchema),
         }),
         response: {
-          200: PaginatedResponse(EtchingActivityResponseSchema, 'Paginated etchings response'),
+          200: PaginatedResponse(SimpleActivityResponseSchema, 'Paginated activity response'),
         },
       },
     },
     async (request, reply) => {
       const offset = request.query.offset ?? 0;
       const limit = request.query.limit ?? 20;
-      const results = await fastify.db.getEtchingActivity(request.params.etching, offset, limit);
+      const results = await fastify.db.getRuneActivity(request.params.etching, offset, limit);
       await reply.send({
         limit,
         offset,
         total: results.total,
-        results: results.results.map(r => parseEtchingActivityResponse(r)),
+        results: results.results.map(r => parseActivityResponse(r)),
+      });
+    }
+  );
+
+  fastify.get(
+    '/etchings/:etching/activity/:address',
+    {
+      schema: {
+        operationId: 'getRuneAddressActivity',
+        summary: 'Rune activity for address',
+        description: 'Retrieves all activity for a Rune address',
+        tags: ['Activities'],
+        params: Type.Object({
+          etching: RuneSchema,
+          address: AddressSchema,
+        }),
+        querystring: Type.Object({
+          offset: Optional(OffsetSchema),
+          limit: Optional(LimitSchema),
+        }),
+        response: {
+          200: PaginatedResponse(SimpleActivityResponseSchema, 'Paginated activity response'),
+        },
+      },
+    },
+    async (request, reply) => {
+      const offset = request.query.offset ?? 0;
+      const limit = request.query.limit ?? 20;
+      const results = await fastify.db.getRuneAddressActivity(
+        request.params.etching,
+        request.params.address,
+        offset,
+        limit
+      );
+      await reply.send({
+        limit,
+        offset,
+        total: results.total,
+        results: results.results.map(r => parseActivityResponse(r)),
       });
     }
   );
@@ -123,16 +160,16 @@ export const EtchingRoutes: FastifyPluginCallback<
         operationId: 'getRuneHolders',
         summary: 'Rune holders',
         description: 'Retrieves a paginated list of holders for a Rune',
-        tags: ['Runes'],
+        tags: ['Balances'],
         params: Type.Object({
-          etching: EtchingParamSchema,
+          etching: RuneSchema,
         }),
         querystring: Type.Object({
-          offset: Type.Optional(OffsetParamSchema),
-          limit: Type.Optional(LimitParamSchema),
+          offset: Optional(OffsetSchema),
+          limit: Optional(LimitSchema),
         }),
         response: {
-          200: PaginatedResponse(BalanceResponseSchema, 'Paginated holders response'),
+          200: PaginatedResponse(SimpleBalanceResponseSchema, 'Paginated holders response'),
         },
       },
     },
@@ -146,6 +183,37 @@ export const EtchingRoutes: FastifyPluginCallback<
         total: results.total,
         results: results.results.map(r => parseBalanceResponse(r)),
       });
+    }
+  );
+
+  fastify.get(
+    '/etchings/:etching/holders/:address',
+    {
+      schema: {
+        operationId: 'getRuneHolderBalance',
+        summary: 'Rune holder balance',
+        description: 'Retrieves holder balance for a specific Rune',
+        tags: ['Balances'],
+        params: Type.Object({
+          etching: RuneSchema,
+          address: AddressSchema,
+        }),
+        response: {
+          404: NotFoundResponse,
+          200: SimpleBalanceResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const balance = await fastify.db.getRuneAddressBalance(
+        request.params.etching,
+        request.params.address
+      );
+      if (!balance) {
+        await reply.code(404).send(Value.Create(NotFoundResponse));
+      } else {
+        await reply.send(parseBalanceResponse(balance));
+      }
     }
   );
 

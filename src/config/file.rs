@@ -1,33 +1,11 @@
 use chainhook_sdk::observer::EventObserverConfigOverrides;
 
-use super::Config;
-
 #[derive(Deserialize, Debug, Clone)]
 pub struct ConfigFile {
     pub network: Option<EventObserverConfigOverrides>,
     pub postgres: PostgresConfigFile,
     pub resources: ResourcesConfigFile,
 }
-
-impl ConfigFile {
-    pub fn from_file_path(file_path: &str) -> Result<ConfigFile, String> {
-        unimplemented!()
-    }
-
-    pub fn from_config_file(config_file: ConfigFile) -> Result<Config, String> {
-        unimplemented!()
-    }
-
-    pub fn default(
-        devnet: bool,
-        testnet: bool,
-        mainnet: bool,
-        config_path: &Option<String>,
-    ) -> Result<Config, String> {
-        unimplemented!()
-    }
-}
-
 #[derive(Deserialize, Debug, Clone)]
 pub struct LogConfigFile {
     pub runes_internals: Option<bool>,

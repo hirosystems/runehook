@@ -11,6 +11,7 @@ use super::db_ledger_operation::DbLedgerOperation;
 #[derive(Debug, Clone)]
 pub struct DbLedgerEntry {
     pub rune_id: String,
+    pub block_hash: String,
     pub block_height: PgNumericU64,
     pub tx_index: PgBigIntU32,
     pub event_index: PgBigIntU32,
@@ -18,15 +19,16 @@ pub struct DbLedgerEntry {
     pub output: Option<PgBigIntU32>,
     pub address: Option<String>,
     pub receiver_address: Option<String>,
-    pub amount: PgNumericU128,
+    pub amount: Option<PgNumericU128>,
     pub operation: DbLedgerOperation,
     pub timestamp: PgBigIntU32,
 }
 
 impl DbLedgerEntry {
     pub fn from_values(
-        amount: u128,
+        amount: Option<u128>,
         rune_id: RuneId,
+        block_hash: &String,
         block_height: u64,
         tx_index: u32,
         event_index: u32,
@@ -39,6 +41,7 @@ impl DbLedgerEntry {
     ) -> Self {
         DbLedgerEntry {
             rune_id: rune_id.to_string(),
+            block_hash: block_hash[2..].to_string(),
             block_height: PgNumericU64(block_height),
             tx_index: PgBigIntU32(tx_index),
             event_index: PgBigIntU32(event_index),
@@ -46,7 +49,7 @@ impl DbLedgerEntry {
             output: output.map(|i| PgBigIntU32(i)),
             address: address.cloned(),
             receiver_address: receiver_address.cloned(),
-            amount: PgNumericU128(amount),
+            amount: amount.map(|i| PgNumericU128(i)),
             operation,
             timestamp: PgBigIntU32(timestamp),
         }
@@ -55,6 +58,7 @@ impl DbLedgerEntry {
     pub fn from_pg_row(row: &Row) -> Self {
         DbLedgerEntry {
             rune_id: row.get("rune_id"),
+            block_hash: row.get("block_hash"),
             block_height: row.get("block_height"),
             tx_index: row.get("tx_index"),
             event_index: row.get("event_index"),

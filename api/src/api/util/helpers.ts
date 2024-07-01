@@ -1,59 +1,86 @@
 import BigNumber from 'bignumber.js';
-import { DbBalance, DbItemWithRune, DbLedgerEntry, DbRune } from '../../pg/types';
-import { EtchingResponse, EtchingActivityResponse, BalanceResponse } from '../schemas';
+import { DbBalance, DbItemWithRune, DbLedgerEntry, DbRuneWithChainTip } from '../../pg/types';
+import { EtchingResponse, ActivityResponse, BalanceResponse } from '../schemas';
 
-function divisibility(num: string, decimals: number): string {
+function divisibility(num: string | BigNumber, decimals: number): string {
   return new BigNumber(num).shiftedBy(-1 * decimals).toFixed(decimals);
 }
 
-export function parseEtchingResponse(rune: DbRune): EtchingResponse {
+export function parseEtchingResponse(rune: DbRuneWithChainTip): EtchingResponse {
+  let mintable = true;
+  if (
+    rune.terms_amount == null ||
+    (rune.terms_cap && BigNumber(rune.total_mints).gte(rune.terms_cap)) ||
+    (rune.terms_height_start && BigNumber(rune.chain_tip).lt(rune.terms_height_start)) ||
+    (rune.terms_height_end && BigNumber(rune.chain_tip).gt(rune.terms_height_end)) ||
+    (rune.terms_offset_start &&
+      BigNumber(rune.chain_tip).lt(BigNumber(rune.block_height).plus(rune.terms_offset_start))) ||
+    (rune.terms_offset_end &&
+      BigNumber(rune.chain_tip).gt(BigNumber(rune.block_height).plus(rune.terms_offset_end)))
+  ) {
+    mintable = false;
+  }
   return {
     id: rune.id,
     number: rune.number,
     name: rune.name,
     spaced_name: rune.spaced_name,
-    block_height: rune.block_height,
-    tx_index: rune.tx_index,
-    tx_id: rune.tx_id,
     divisibility: rune.divisibility,
-    premine: divisibility(rune.premine, rune.divisibility),
     symbol: rune.symbol,
     mint_terms: {
       amount: rune.terms_amount ? divisibility(rune.terms_amount, rune.divisibility) : null,
       cap: rune.terms_cap ? divisibility(rune.terms_cap, rune.divisibility) : null,
-      height_start: rune.terms_height_start,
-      height_end: rune.terms_height_end,
-      offset_start: rune.terms_offset_start,
-      offset_end: rune.terms_offset_end,
+      height_start: rune.terms_height_start ? parseInt(rune.terms_height_start) : null,
+      height_end: rune.terms_height_end ? parseInt(rune.terms_height_end) : null,
+      offset_start: rune.terms_offset_start ? parseInt(rune.terms_offset_start) : null,
+      offset_end: rune.terms_offset_end ? parseInt(rune.terms_offset_end) : null,
+    },
+    supply: {
+      premine: divisibility(rune.premine, rune.divisibility),
+      current: divisibility(
+        BigNumber(rune.minted).plus(rune.burned).plus(rune.premine),
+        rune.divisibility
+      ),
+      minted: divisibility(rune.minted, rune.divisibility),
+      total_mints: rune.total_mints,
+      burned: divisibility(rune.burned, rune.divisibility),
+      total_burns: rune.total_burns,
+      mint_percentage: rune.terms_cap
+        ? BigNumber(rune.total_mints).div(rune.terms_cap).times(100).toFixed(4)
+        : '0.0000',
+      mintable,
     },
     turbo: rune.turbo,
-    minted: divisibility(rune.minted, rune.divisibility),
-    total_mints: rune.total_mints,
-    burned: divisibility(rune.burned, rune.divisibility),
-    total_burns: rune.total_burns,
-    timestamp: rune.timestamp,
+    location: {
+      block_hash: rune.block_hash,
+      block_height: parseInt(rune.block_height),
+      tx_index: rune.tx_index,
+      tx_id: rune.tx_id,
+      timestamp: rune.timestamp,
+    },
   };
 }
 
-export function parseEtchingActivityResponse(
-  entry: DbItemWithRune<DbLedgerEntry>
-): EtchingActivityResponse {
+export function parseActivityResponse(entry: DbItemWithRune<DbLedgerEntry>): ActivityResponse {
   return {
     rune: {
       id: entry.rune_id,
       name: entry.name,
       spaced_name: entry.spaced_name,
     },
-    block_height: entry.block_height,
-    tx_index: entry.tx_index,
-    tx_id: entry.tx_id,
-    vout: entry.output,
-    output: `${entry.tx_id}:${entry.output}`,
     operation: entry.operation,
     address: entry.address ?? undefined,
     receiver_address: entry.receiver_address ?? undefined,
-    timestamp: entry.timestamp,
-    amount: divisibility(entry.amount, entry.divisibility),
+    amount: entry.amount ? divisibility(entry.amount, entry.divisibility) : undefined,
+    location: {
+      block_hash: entry.block_hash,
+      block_height: parseInt(entry.block_height),
+      tx_index: entry.tx_index,
+      tx_id: entry.tx_id,
+      vout: entry.output ?? undefined,
+      output: entry.output ? `${entry.tx_id}:${entry.output}` : undefined,
+      timestamp: entry.timestamp,
+    },
   };
 }
 

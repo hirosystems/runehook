@@ -99,9 +99,9 @@ pub async fn pg_insert_rune_rows(
 ) -> Result<bool, Error> {
     let stmt = db_tx.prepare(
         "INSERT INTO runes
-        (id, number, name, spaced_name, block_height, tx_index, tx_id, divisibility, premine, symbol, terms_amount, terms_cap,
-         terms_height_start, terms_height_end, terms_offset_start, terms_offset_end, turbo, timestamp)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+        (id, number, name, spaced_name, block_hash, block_height, tx_index, tx_id, divisibility, premine, symbol, terms_amount,
+         terms_cap, terms_height_start, terms_height_end, terms_offset_start, terms_offset_end, turbo, timestamp)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
         ON CONFLICT (name) DO NOTHING"
     ).await.expect("Unable to prepare statement");
     for row in rows.iter() {
@@ -113,6 +113,7 @@ pub async fn pg_insert_rune_rows(
                     &row.number,
                     &row.name,
                     &row.spaced_name,
+                    &row.block_hash,
                     &row.block_height,
                     &row.tx_index,
                     &row.tx_id,
@@ -243,8 +244,9 @@ pub async fn pg_insert_ledger_entries(
     let stmt = db_tx
         .prepare(
             "INSERT INTO ledger
-        (rune_id, block_height, tx_index, event_index, tx_id, output, address, receiver_address, amount, operation, timestamp)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
+        (rune_id, block_hash, block_height, tx_index, event_index, tx_id, output, address, receiver_address, amount, operation,
+         timestamp)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
         )
         .await
         .expect("Unable to prepare statement");
@@ -254,6 +256,7 @@ pub async fn pg_insert_ledger_entries(
                 &stmt,
                 &[
                     &row.rune_id,
+                    &row.block_hash,
                     &row.block_height,
                     &row.tx_index,
                     &row.event_index,
@@ -332,6 +335,32 @@ pub async fn pg_get_rune_by_id(
         return None;
     };
     Some(DbRune::from_pg_row(&row))
+}
+
+pub async fn pg_get_rune_total_mints(
+    id: &RuneId,
+    db_tx: &mut Transaction<'_>,
+    ctx: &Context,
+) -> Option<u128> {
+    let row = match db_tx
+        .query_opt("SELECT total_mints FROM runes WHERE id = $1", &[&id.to_string()])
+        .await
+    {
+        Ok(row) => row,
+        Err(e) => {
+            error!(
+                ctx.expect_logger(),
+                "error retrieving rune minted total: {}",
+                e.to_string()
+            );
+            panic!();
+        }
+    };
+    let Some(row) = row else {
+        return None;
+    };
+    let minted: PgNumericU128 = row.get("total_mints");
+    Some(minted.0)
 }
 
 pub async fn pg_get_missed_input_rune_balances(
