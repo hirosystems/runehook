@@ -3,8 +3,8 @@ use std::{collections::HashMap, str::FromStr};
 use cache::transaction_cache::InputRuneBalance;
 use chainhook_sdk::utils::Context;
 use models::{
-    db_balance_update::DbBalanceUpdate, db_ledger_entry::DbLedgerEntry, db_rune::DbRune,
-    db_rune_update::DbRuneUpdate,
+    db_balance_change::DbBalanceChange, db_ledger_entry::DbLedgerEntry, db_rune::DbRune,
+    db_supply_change::DbSupplyChange,
 };
 use ordinals::RuneId;
 use refinery::embed_migrations;
@@ -92,7 +92,7 @@ pub async fn pg_test_client() -> Client {
     client
 }
 
-pub async fn pg_insert_rune_rows(
+pub async fn pg_insert_runes(
     rows: &Vec<DbRune>,
     db_tx: &mut Transaction<'_>,
     ctx: &Context,
@@ -145,20 +145,32 @@ pub async fn pg_insert_rune_rows(
     Ok(true)
 }
 
-pub async fn pg_update_runes(
-    rows: &Vec<DbRuneUpdate>,
+pub async fn pg_insert_supply_changes(
+    rows: &Vec<DbSupplyChange>,
     db_tx: &mut Transaction<'_>,
     ctx: &Context,
 ) -> Result<bool, Error> {
     let stmt = db_tx
         .prepare(
-            "UPDATE runes
-        SET minted = minted + $1,
-            total_mints = total_mints + $2,
-            burned = burned + $3,
-            total_burns = total_burns + $4,
-            total_operations = total_operations + $5
-        WHERE id = $6",
+            "WITH previous AS (
+                SELECT * FROM supply_changes
+                WHERE rune_id = $1 AND block_height <= $2
+                ORDER BY block_height DESC LIMIT 1
+            )
+            INSERT INTO supply_changes
+            (rune_id, block_height, minted, total_mints, burned, total_burns, total_operations)
+            VALUES ($1, $2,
+                COALESCE((SELECT minted FROM previous), 0) + $3,
+                COALESCE((SELECT total_mints FROM previous), 0) + $4,
+                COALESCE((SELECT burned FROM previous), 0) + $5,
+                COALESCE((SELECT total_burns FROM previous), 0) + $6,
+                COALESCE((SELECT total_operations FROM previous), 0) + $7)
+            ON CONFLICT (rune_id, block_height) DO UPDATE SET
+                minted = EXCLUDED.minted,
+                total_mints = EXCLUDED.total_mints,
+                burned = EXCLUDED.burned,
+                total_burns = EXCLUDED.total_burns,
+                total_operations = EXCLUDED.total_operations",
         )
         .await
         .expect("Unable to prepare statement");
@@ -167,12 +179,13 @@ pub async fn pg_update_runes(
             .execute(
                 &stmt,
                 &[
+                    &row.rune_id,
+                    &row.block_height,
                     &row.minted,
                     &row.total_mints,
                     &row.burned,
                     &row.total_burns,
                     &row.total_operations,
-                    &row.id,
                 ],
             )
             .await
@@ -181,7 +194,7 @@ pub async fn pg_update_runes(
             Err(e) => {
                 error!(
                     ctx.expect_logger(),
-                    "Error updating rune: {:?} {:?}", e, row
+                    "Error updating rune supply: {:?} {:?}", e, row
                 );
                 panic!()
             }
@@ -190,24 +203,32 @@ pub async fn pg_update_runes(
     Ok(true)
 }
 
-pub async fn pg_update_balances(
-    rows: &Vec<DbBalanceUpdate>,
+pub async fn pg_insert_balance_changes(
+    rows: &Vec<DbBalanceChange>,
     increase: bool,
     db_tx: &mut Transaction<'_>,
     ctx: &Context,
 ) -> Result<bool, Error> {
-    let stmt_str = if increase {
-        "INSERT INTO balances (rune_id, address, balance, total_operations) VALUES ($1, $2, $3, $4)
-        ON CONFLICT (rune_id, address) DO UPDATE SET
-            balance = balances.balance + EXCLUDED.balance,
-            total_operations = balances.total_operations + EXCLUDED.total_operations"
-    } else {
-        "UPDATE balances
-        SET balance = GREATEST(balance - $3, 0::numeric), total_operations = total_operations + $4
-        WHERE rune_id = $1 AND address = $2"
-    };
+    let sign = if increase { "+" } else { "-" };
     let stmt = db_tx
-        .prepare(stmt_str)
+        .prepare(
+            format!(
+                "WITH previous AS (
+                    SELECT * FROM balance_changes
+                    WHERE rune_id = $1 AND block_height <= $2 AND address = $3
+                    ORDER BY block_height DESC LIMIT 1
+                )
+                INSERT INTO balance_changes (rune_id, block_height, address, balance, total_operations)
+                VALUES ($1, $2, $3,
+                    COALESCE((SELECT balance FROM previous), 0) {} $4,
+                    COALESCE((SELECT total_operations FROM previous), 0) {} $5)
+                ON CONFLICT (rune_id, block_height, address) DO UPDATE SET
+                    balance = EXCLUDED.balance,
+                    total_operations = EXCLUDED.total_operations",
+                sign, sign
+            )
+            .as_str(),
+        )
         .await
         .expect("Unable to prepare statement");
     for row in rows.iter() {
@@ -216,6 +237,7 @@ pub async fn pg_update_balances(
                 &stmt,
                 &[
                     &row.rune_id,
+                    &row.block_height,
                     &row.address,
                     &row.balance,
                     &row.total_operations,
@@ -343,7 +365,10 @@ pub async fn pg_get_rune_total_mints(
     ctx: &Context,
 ) -> Option<u128> {
     let row = match db_tx
-        .query_opt("SELECT total_mints FROM runes WHERE id = $1", &[&id.to_string()])
+        .query_opt(
+            "SELECT total_mints FROM supply_changes WHERE rune_id = $1 ORDER BY block_height DESC LIMIT 1",
+            &[&id.to_string()],
+        )
         .await
     {
         Ok(row) => row,

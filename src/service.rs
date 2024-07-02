@@ -90,26 +90,9 @@ pub async fn start_service(config: &Config, ctx: &Context) -> Result<(), String>
         };
 
         match event {
-            ObserverEvent::BitcoinChainEvent((
-                BitcoinChainEvent::ChainUpdatedWithBlocks(mut event),
-                _,
-            )) => {
-                for block in event.new_blocks.iter_mut() {
-                    index_block(&mut pg_client, &mut index_cache, block, ctx).await;
-                }
+            ObserverEvent::Terminate => {
+                // Break
             }
-            ObserverEvent::BitcoinChainEvent((
-                BitcoinChainEvent::ChainUpdatedWithReorg(mut event),
-                _,
-            )) => {
-                for block in event.blocks_to_rollback.iter() {
-                    // rollback
-                }
-                for block in event.blocks_to_apply.iter() {
-                    // apply
-                }
-            }
-            ObserverEvent::Terminate => {}
             _ => {}
         }
     }
@@ -163,6 +146,7 @@ pub fn chainhook_sidecar_mutate_blocks(
     _config: &Config,
     _ctx: &Context,
 ) {
+    println!("sidecar with blocks");
     for _block_id_to_rollback in blocks_ids_to_rollback.iter() {
         // Delete local caches
     }

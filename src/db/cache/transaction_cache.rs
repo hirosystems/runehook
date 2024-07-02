@@ -7,11 +7,8 @@ use bitcoin::{Address, Network, ScriptBuf};
 use chainhook_sdk::{types::bitcoin::TxOut, utils::Context};
 use ordinals::{Cenotaph, Edict, Etching, Rune, RuneId, Runestone};
 
-use crate::db::{
-    models::{
-        db_ledger_entry::DbLedgerEntry, db_ledger_operation::DbLedgerOperation, db_rune::DbRune,
-    },
-    types::pg_numeric_u128::PgNumericU128,
+use crate::db::models::{
+    db_ledger_entry::DbLedgerEntry, db_ledger_operation::DbLedgerOperation, db_rune::DbRune,
 };
 
 use super::transaction_location::TransactionLocation;

@@ -15,8 +15,8 @@ use tokio_postgres::Transaction;
 
 use crate::db::{
     models::{
-        db_balance_update::DbBalanceUpdate, db_ledger_entry::DbLedgerEntry,
-        db_ledger_operation::DbLedgerOperation, db_rune::DbRune, db_rune_update::DbRuneUpdate,
+        db_balance_change::DbBalanceChange, db_ledger_entry::DbLedgerEntry,
+        db_ledger_operation::DbLedgerOperation, db_rune::DbRune, db_supply_change::DbSupplyChange,
     },
     pg_get_missed_input_rune_balances, pg_get_rune_by_id, pg_get_rune_total_mints,
 };
@@ -337,45 +337,51 @@ impl IndexCache {
                 DbLedgerOperation::Etching => {}
                 DbLedgerOperation::Mint => {
                     self.db_cache
-                        .rune_updates
+                        .supply_changes
                         .entry(entry.rune_id.clone())
                         .and_modify(|i| {
                             i.minted += entry.amount.unwrap();
                             i.total_mints += 1;
                             i.total_operations += 1;
                         })
-                        .or_insert(DbRuneUpdate::from_mint(
+                        .or_insert(DbSupplyChange::from_mint(
                             entry.rune_id.clone(),
+                            entry.block_height.clone(),
                             entry.amount.unwrap(),
                         ));
                 }
                 DbLedgerOperation::Burn => {
                     self.db_cache
-                        .rune_updates
+                        .supply_changes
                         .entry(entry.rune_id.clone())
                         .and_modify(|i| {
                             i.burned += entry.amount.unwrap();
                             i.total_burns += 1;
                             i.total_operations += 1;
                         })
-                        .or_insert(DbRuneUpdate::from_burn(
+                        .or_insert(DbSupplyChange::from_burn(
                             entry.rune_id.clone(),
+                            entry.block_height.clone(),
                             entry.amount.unwrap(),
                         ));
                 }
                 DbLedgerOperation::Send => {
                     self.db_cache
-                        .rune_updates
+                        .supply_changes
                         .entry(entry.rune_id.clone())
                         .and_modify(|i| i.total_operations += 1)
-                        .or_insert(DbRuneUpdate::from_operation(entry.rune_id.clone()));
+                        .or_insert(DbSupplyChange::from_operation(
+                            entry.rune_id.clone(),
+                            entry.block_height.clone(),
+                        ));
                     if let Some(address) = entry.address.clone() {
                         self.db_cache
                             .balance_deductions
                             .entry((entry.rune_id.clone(), address.clone()))
                             .and_modify(|i| i.balance += entry.amount.unwrap())
-                            .or_insert(DbBalanceUpdate::from_operation(
+                            .or_insert(DbBalanceChange::from_operation(
                                 entry.rune_id.clone(),
+                                entry.block_height.clone(),
                                 address,
                                 entry.amount.unwrap(),
                             ));
@@ -383,17 +389,21 @@ impl IndexCache {
                 }
                 DbLedgerOperation::Receive => {
                     self.db_cache
-                        .rune_updates
+                        .supply_changes
                         .entry(entry.rune_id.clone())
                         .and_modify(|i| i.total_operations += 1)
-                        .or_insert(DbRuneUpdate::from_operation(entry.rune_id.clone()));
+                        .or_insert(DbSupplyChange::from_operation(
+                            entry.rune_id.clone(),
+                            entry.block_height.clone(),
+                        ));
                     if let Some(address) = entry.address.clone() {
                         self.db_cache
                             .balance_increases
                             .entry((entry.rune_id.clone(), address.clone()))
                             .and_modify(|i| i.balance += entry.amount.unwrap())
-                            .or_insert(DbBalanceUpdate::from_operation(
+                            .or_insert(DbBalanceChange::from_operation(
                                 entry.rune_id.clone(),
+                                entry.block_height.clone(),
                                 address,
                                 entry.amount.unwrap(),
                             ));
