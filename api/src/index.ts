@@ -1,10 +1,5 @@
-import {
-  buildPrometheusServer,
-  isProdEnv,
-  logger,
-  registerShutdownConfig,
-} from '@hirosystems/api-toolkit';
-import { buildApiServer } from './api/init';
+import { isProdEnv, logger, registerShutdownConfig } from '@hirosystems/api-toolkit';
+import { buildApiServer, buildPrometheusServer } from './api/init';
 import { ENV } from './env';
 import { PgStore } from './pg/pg-store';
 import { ApiMetrics } from './metrics/metrics';
