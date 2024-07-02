@@ -1,3 +1,10 @@
+## [0.2.1](https://github.com/hirosystems/runehook/compare/v0.2.0...v0.2.1) (2024-07-02)
+
+
+### Bug Fixes
+
+* enable prometheus metrics ([#7](https://github.com/hirosystems/runehook/issues/7)) ([e3533ef](https://github.com/hirosystems/runehook/commit/e3533efe796ef84fcc672553a515dfa418118678))
+
 ## [0.2.0](https://github.com/hirosystems/runehook/compare/v0.1.0...v0.2.0) (2024-07-01)
 
 
