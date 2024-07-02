@@ -1,8 +1,13 @@
-import { isProdEnv, logger, registerShutdownConfig } from '@hirosystems/api-toolkit';
+import {
+  buildPrometheusServer,
+  isProdEnv,
+  logger,
+  registerShutdownConfig,
+} from '@hirosystems/api-toolkit';
 import { buildApiServer } from './api/init';
 import { ENV } from './env';
 import { PgStore } from './pg/pg-store';
-// import { ApiMetrics } from './metrics/metrics';
+import { ApiMetrics } from './metrics/metrics';
 
 async function initApiService(db: PgStore) {
   logger.info('Initializing API service...');
@@ -17,19 +22,18 @@ async function initApiService(db: PgStore) {
 
   await fastify.listen({ host: ENV.API_HOST, port: ENV.API_PORT });
 
-  // if (isProdEnv) {
-  //   const promServer = await buildPromServer({ metrics: fastify.metrics });
-  //   registerShutdownConfig({
-  //     name: 'Prometheus Server',
-  //     forceKillable: false,
-  //     handler: async () => {
-  //       await promServer.close();
-  //     },
-  //   });
-
-  //   // ApiMetrics.configure(db);
-  //   await promServer.listen({ host: ENV.API_HOST, port: 9153 });
-  // }
+  if (isProdEnv) {
+    const promServer = await buildPrometheusServer({ metrics: fastify.metrics });
+    registerShutdownConfig({
+      name: 'Prometheus Server',
+      forceKillable: false,
+      handler: async () => {
+        await promServer.close();
+      },
+    });
+    ApiMetrics.configure(db);
+    await promServer.listen({ host: ENV.API_HOST, port: 9153 });
+  }
 }
 
 async function initApp() {
