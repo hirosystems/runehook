@@ -1,3 +1,10 @@
+## [0.2.2](https://github.com/hirosystems/runehook/compare/v0.2.1...v0.2.2) (2024-07-02)
+
+
+### Bug Fixes
+
+* fastify-metrics version ([ce25cb0](https://github.com/hirosystems/runehook/commit/ce25cb090992439d826ffde22ec346584a9243c2))
+
 ## [0.2.1](https://github.com/hirosystems/runehook/compare/v0.2.0...v0.2.1) (2024-07-02)
 
 
