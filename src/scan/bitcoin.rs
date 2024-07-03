@@ -1,8 +1,9 @@
 use crate::bitcoind::bitcoind_get_block_height;
 use crate::config::Config;
 use crate::db::cache::index_cache::IndexCache;
-use crate::db::index::index_block;
+use crate::db::index::{index_block, roll_back_block};
 use crate::{try_error, try_info};
+use chainhook_sdk::bitcoin::block;
 use chainhook_sdk::chainhooks::bitcoin::{
     evaluate_bitcoin_chainhooks_on_chain_event, handle_bitcoin_hook_action,
     BitcoinChainhookOccurrence, BitcoinTriggerChainhook,
@@ -19,6 +20,12 @@ use chainhook_sdk::types::{
 use chainhook_sdk::utils::{file_append, send_request, BlockHeights, Context};
 use std::collections::HashMap;
 use tokio_postgres::Client;
+
+pub async fn drop_blocks(start_block: u64, end_block: u64, pg_client: &mut Client, ctx: &Context) {
+    for block in start_block..=end_block {
+        roll_back_block(pg_client, block, ctx).await;
+    }
+}
 
 pub async fn scan_blocks(
     blocks: Vec<u64>,
@@ -92,7 +99,7 @@ pub async fn scan_bitcoin_chainstate_via_rpc_using_predicate(
 
     try_info!(
         ctx,
-        "Starting predicate evaluation on {} Bitcoin blocks",
+        "Scanning {} Bitcoin blocks",
         block_heights_to_scan.len()
     );
     let mut actions_triggered = 0;

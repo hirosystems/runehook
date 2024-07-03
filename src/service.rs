@@ -27,10 +27,10 @@ pub async fn start_service(config: &Config, ctx: &Context) -> Result<(), String>
         .await
         .expect("unable to set up observer sidecar");
 
-    let chain_tip = pg_get_block_height(&mut pg_client, ctx)
-        .await
-        .unwrap_or(get_rune_genesis_block_height(config.get_bitcoin_network()) - 1);
     loop {
+        let chain_tip = pg_get_block_height(&mut pg_client, ctx)
+            .await
+            .unwrap_or(get_rune_genesis_block_height(config.get_bitcoin_network()) - 1);
         let bitcoind_chain_tip = bitcoind_get_block_height(config, ctx);
         if bitcoind_chain_tip < chain_tip {
             try_info!(
@@ -43,18 +43,20 @@ pub async fn start_service(config: &Config, ctx: &Context) -> Result<(), String>
         } else if bitcoind_chain_tip > chain_tip {
             try_info!(
                 ctx,
-                "Scanning block range {} to {}",
-                chain_tip,
+                "Block height is behind bitcoind, scanning block range {} to {}",
+                chain_tip + 1,
                 bitcoind_chain_tip
             );
             scan_blocks(
-                ((chain_tip + 1)..bitcoind_chain_tip).collect(),
+                ((chain_tip + 1)..=bitcoind_chain_tip).collect(),
                 config,
                 &mut pg_client,
                 &mut index_cache,
                 ctx,
             )
             .await?;
+        } else {
+            try_info!(ctx, "Caught up to bitcoind chain tip at {}", chain_tip);
             break;
         }
     }
@@ -80,7 +82,7 @@ pub async fn start_service(config: &Config, ctx: &Context) -> Result<(), String>
         )
         .expect("unable to start Stacks chain observer");
     });
-    try_info!(ctx, "Listening for new blocks",);
+    try_info!(ctx, "Listening for new blocks via Chainhook SDK");
 
     loop {
         let event = match observer_event_rx.recv() {
@@ -158,6 +160,7 @@ pub async fn chainhook_sidecar_mutate_blocks(
     _config: &Config,
     ctx: &Context,
 ) {
+    try_info!(ctx, "Received mutate blocks message from Chainhook SDK");
     for block_id in block_ids_to_rollback.iter() {
         roll_back_block(pg_client, block_id.index, ctx).await;
     }

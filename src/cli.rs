@@ -5,7 +5,7 @@ use chainhook_sdk::utils::{BlockHeights, Context};
 use crate::{
     config::{generator::generate_config, Config},
     db::{cache::new_index_cache, pg_connect},
-    scan::bitcoin::scan_blocks,
+    scan::bitcoin::{drop_blocks, scan_blocks},
     service::start_service,
 };
 
@@ -27,6 +27,9 @@ enum Command {
     /// Scanning blocks and indexing runes
     #[clap(subcommand)]
     Scan(ScanCommand),
+    /// Perform maintenance operations on local databases
+    #[clap(subcommand)]
+    Db(DbCommand),
 }
 
 #[derive(Subcommand, PartialEq, Clone, Debug)]
@@ -105,6 +108,24 @@ struct PingCommand {
     pub config_path: String,
 }
 
+#[derive(Subcommand, PartialEq, Clone, Debug)]
+enum DbCommand {
+    /// Rebuild inscriptions entries for a given block
+    #[clap(name = "drop", bin_name = "drop")]
+    Drop(DropDbCommand),
+}
+
+#[derive(Parser, PartialEq, Clone, Debug)]
+struct DropDbCommand {
+    /// Starting block
+    pub start_block: u64,
+    /// Ending block
+    pub end_block: u64,
+    /// Load config file path
+    #[clap(long = "config-path")]
+    pub config_path: String,
+}
+
 pub fn main() {
     let logger = hiro_system_kit::log::setup_logger();
     let _guard = hiro_system_kit::log::setup_global_logger(logger.clone());
@@ -155,6 +176,21 @@ async fn handle_command(opts: Opts, ctx: Context) -> Result<(), String> {
             let mut pg_client = pg_connect(&config, true, &ctx).await;
             let mut index_cache = new_index_cache(&config, &mut pg_client, &ctx).await;
             scan_blocks(blocks, &config, &mut pg_client, &mut index_cache, &ctx).await?;
+        }
+        Command::Db(DbCommand::Drop(cmd)) => {
+            let config = Config::from_file_path(&cmd.config_path)?;
+            println!(
+                "{} blocks will be deleted. Confirm? [Y/n]",
+                cmd.end_block - cmd.start_block + 1
+            );
+            let mut buffer = String::new();
+            std::io::stdin().read_line(&mut buffer).unwrap();
+            if buffer.starts_with('n') {
+                return Err("Deletion aborted".to_string());
+            }
+
+            let mut pg_client = pg_connect(&config, false, &ctx).await;
+            drop_blocks(cmd.start_block, cmd.end_block, &mut pg_client, &ctx).await;
         }
     }
     Ok(())
