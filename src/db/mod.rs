@@ -13,7 +13,7 @@ use types::{
     pg_bigint_u32::PgBigIntU32, pg_numeric_u128::PgNumericU128, pg_numeric_u64::PgNumericU64,
 };
 
-use crate::config::Config;
+use crate::{config::Config, try_error, try_info};
 
 pub mod cache;
 pub mod index;
@@ -46,18 +46,14 @@ pub async fn pg_connect(config: &Config, run_migrations: bool, ctx: &Context) ->
                 break;
             }
             Err(e) => {
-                error!(
-                    ctx.expect_logger(),
-                    "Error connecting to postgres: {}",
-                    e.to_string()
-                );
+                try_error!(ctx, "Error connecting to postgres: {}", e.to_string());
                 std::thread::sleep(std::time::Duration::from_secs(1));
             }
         }
     }
 
     if run_migrations {
-        info!(ctx.expect_logger(), "Running postgres migrations");
+        try_info!(ctx, "Running postgres migrations");
         match migrations::runner()
             .set_migration_table_name("pgmigrations")
             .run_async(&mut pg_client)
@@ -65,15 +61,11 @@ pub async fn pg_connect(config: &Config, run_migrations: bool, ctx: &Context) ->
         {
             Ok(_) => {}
             Err(e) => {
-                error!(
-                    ctx.expect_logger(),
-                    "error running pg migrations: {}",
-                    e.to_string()
-                );
+                try_error!(ctx, "error running pg migrations: {}", e.to_string());
                 panic!()
             }
         };
-        info!(ctx.expect_logger(), "Postgres migrations complete");
+        try_info!(ctx, "Postgres migrations complete");
     }
 
     pg_client
@@ -134,10 +126,7 @@ pub async fn pg_insert_runes(
         {
             Ok(_) => {}
             Err(e) => {
-                error!(
-                    ctx.expect_logger(),
-                    "Error inserting rune: {:?} {:?}", e, row
-                );
+                try_error!(ctx, "Error inserting rune: {:?} {:?}", e, row);
                 panic!()
             }
         };
@@ -192,10 +181,7 @@ pub async fn pg_insert_supply_changes(
         {
             Ok(_) => {}
             Err(e) => {
-                error!(
-                    ctx.expect_logger(),
-                    "Error updating rune supply: {:?} {:?}", e, row
-                );
+                try_error!(ctx, "Error updating rune supply: {:?} {:?}", e, row);
                 panic!()
             }
         };
@@ -247,9 +233,12 @@ pub async fn pg_insert_balance_changes(
         {
             Ok(_) => {}
             Err(e) => {
-                error!(
-                    ctx.expect_logger(),
-                    "Error updating balance (increase={}): {:?} {:?}", increase, e, row
+                try_error!(
+                    ctx,
+                    "Error updating balance (increase={}): {:?} {:?}",
+                    increase,
+                    e,
+                    row
                 );
                 panic!()
             }
@@ -295,10 +284,7 @@ pub async fn pg_insert_ledger_entries(
         {
             Ok(_) => {}
             Err(e) => {
-                error!(
-                    ctx.expect_logger(),
-                    "Error inserting ledger entry: {:?} {:?}", e, row
-                );
+                try_error!(ctx, "Error inserting ledger entry: {:?} {:?}", e, row);
                 panic!()
             }
         };
@@ -376,11 +362,7 @@ pub async fn pg_get_rune_by_id(
     {
         Ok(row) => row,
         Err(e) => {
-            error!(
-                ctx.expect_logger(),
-                "error retrieving rune: {}",
-                e.to_string()
-            );
+            try_error!(ctx, "error retrieving rune: {}", e.to_string());
             panic!();
         }
     };
@@ -404,8 +386,8 @@ pub async fn pg_get_rune_total_mints(
     {
         Ok(row) => row,
         Err(e) => {
-            error!(
-                ctx.expect_logger(),
+            try_error!(
+                ctx,
                 "error retrieving rune minted total: {}",
                 e.to_string()
             );
@@ -465,8 +447,8 @@ pub async fn pg_get_missed_input_rune_balances(
     {
         Ok(rows) => rows,
         Err(e) => {
-            error!(
-                ctx.expect_logger(),
+            try_error!(
+                ctx,
                 "error retrieving output rune balances: {}",
                 e.to_string()
             );

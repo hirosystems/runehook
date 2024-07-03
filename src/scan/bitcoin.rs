@@ -2,6 +2,7 @@ use crate::bitcoind::bitcoind_get_block_height;
 use crate::config::Config;
 use crate::db::cache::index_cache::IndexCache;
 use crate::db::index::index_block;
+use crate::{try_error, try_info};
 use chainhook_sdk::chainhooks::bitcoin::{
     evaluate_bitcoin_chainhooks_on_chain_event, handle_bitcoin_hook_action,
     BitcoinChainhookOccurrence, BitcoinTriggerChainhook,
@@ -89,8 +90,8 @@ pub async fn scan_bitcoin_chainstate_via_rpc_using_predicate(
     let mut block_heights_to_scan =
         block_heights_to_scan_res.map_err(|_e| format!("Block start / end block spec invalid"))?;
 
-    info!(
-        ctx.expect_logger(),
+    try_info!(
+        ctx,
         "Starting predicate evaluation on {} Bitcoin blocks",
         block_heights_to_scan.len()
     );
@@ -154,8 +155,8 @@ pub async fn scan_bitcoin_chainstate_via_rpc_using_predicate(
             }
         }
     }
-    info!(
-        ctx.expect_logger(),
+    try_info!(
+        ctx,
         "{number_of_blocks_scanned} blocks scanned, {actions_triggered} actions triggered"
     );
 
@@ -193,7 +194,7 @@ async fn execute_predicates_action<'a>(
         }
         match handle_bitcoin_hook_action(trigger, &proofs) {
             Err(e) => {
-                error!(ctx.expect_logger(), "unable to handle action {}", e);
+                try_error!(ctx, "unable to handle action {}", e);
             }
             Ok(action) => {
                 actions_triggered += 1;

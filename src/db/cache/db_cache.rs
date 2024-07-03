@@ -3,12 +3,16 @@ use std::collections::HashMap;
 use chainhook_sdk::utils::Context;
 use tokio_postgres::Transaction;
 
-use crate::db::{
-    models::{
-        db_balance_change::DbBalanceChange, db_ledger_entry::DbLedgerEntry, db_rune::DbRune,
-        db_supply_change::DbSupplyChange,
+use crate::{
+    db::{
+        models::{
+            db_balance_change::DbBalanceChange, db_ledger_entry::DbLedgerEntry, db_rune::DbRune,
+            db_supply_change::DbSupplyChange,
+        },
+        pg_insert_balance_changes, pg_insert_ledger_entries, pg_insert_runes,
+        pg_insert_supply_changes,
     },
-    pg_insert_ledger_entries, pg_insert_runes, pg_insert_supply_changes, pg_insert_balance_changes,
+    try_debug,
 };
 
 /// Holds rows that have yet to be inserted into the database.
@@ -34,16 +38,12 @@ impl DbCache {
     /// Insert all data into the DB and clear cache.
     pub async fn flush(&mut self, db_tx: &mut Transaction<'_>, ctx: &Context) {
         if self.runes.len() > 0 {
-            debug!(ctx.expect_logger(), "Flushing {} runes", self.runes.len());
+            try_debug!(ctx, "Flushing {} runes", self.runes.len());
             let _ = pg_insert_runes(&self.runes, db_tx, ctx).await;
             self.runes.clear();
         }
         if self.supply_changes.len() > 0 {
-            debug!(
-                ctx.expect_logger(),
-                "Flushing {} supply changes",
-                self.supply_changes.len()
-            );
+            try_debug!(ctx, "Flushing {} supply changes", self.supply_changes.len());
             let _ = pg_insert_supply_changes(
                 &self.supply_changes.values().cloned().collect(),
                 db_tx,
@@ -53,17 +53,13 @@ impl DbCache {
             self.supply_changes.clear();
         }
         if self.ledger_entries.len() > 0 {
-            debug!(
-                ctx.expect_logger(),
-                "Flushing {} ledger entries",
-                self.ledger_entries.len()
-            );
+            try_debug!(ctx, "Flushing {} ledger entries", self.ledger_entries.len());
             let _ = pg_insert_ledger_entries(&self.ledger_entries, db_tx, ctx).await;
             self.ledger_entries.clear();
         }
         if self.balance_increases.len() > 0 {
-            debug!(
-                ctx.expect_logger(),
+            try_debug!(
+                ctx,
                 "Flushing {} balance increases",
                 self.balance_increases.len()
             );
@@ -77,8 +73,8 @@ impl DbCache {
             self.balance_increases.clear();
         }
         if self.balance_deductions.len() > 0 {
-            debug!(
-                ctx.expect_logger(),
+            try_debug!(
+                ctx,
                 "Flushing {} balance deductions",
                 self.balance_deductions.len()
             );

@@ -7,6 +7,7 @@ use crate::db::cache::new_index_cache;
 use crate::db::index::{get_rune_genesis_block_height, index_block, roll_back_block};
 use crate::db::{pg_connect, pg_get_block_height};
 use crate::scan::bitcoin::scan_blocks;
+use crate::{try_error, try_info};
 use chainhook_sdk::observer::BitcoinBlockDataCached;
 use chainhook_sdk::types::BlockIdentifier;
 use chainhook_sdk::{
@@ -30,17 +31,19 @@ pub async fn start_service(config: &Config, ctx: &Context) -> Result<(), String>
     loop {
         let bitcoind_chain_tip = bitcoind_get_block_height(config, ctx);
         if bitcoind_chain_tip < chain_tip {
-            info!(
-                ctx.expect_logger(),
+            try_info!(
+                ctx,
                 "Waiting for bitcoind to reach height {}, currently at {}",
                 chain_tip,
                 bitcoind_chain_tip
             );
             std::thread::sleep(std::time::Duration::from_secs(10));
         } else if bitcoind_chain_tip > chain_tip {
-            info!(
-                ctx.expect_logger(),
-                "Scanning on block range {} to {}", chain_tip, bitcoind_chain_tip
+            try_info!(
+                ctx,
+                "Scanning on block range {} to {}",
+                chain_tip,
+                bitcoind_chain_tip
             );
             scan_blocks(
                 ((chain_tip + 1)..bitcoind_chain_tip).collect(),
@@ -75,23 +78,19 @@ pub async fn start_service(config: &Config, ctx: &Context) -> Result<(), String>
         )
         .expect("unable to start Stacks chain observer");
     });
-    info!(ctx.expect_logger(), "Listening for new blocks",);
+    try_info!(ctx, "Listening for new blocks",);
 
     loop {
         let event = match observer_event_rx.recv() {
             Ok(cmd) => cmd,
             Err(e) => {
-                error!(
-                    ctx.expect_logger(),
-                    "Error: broken channel {}",
-                    e.to_string()
-                );
+                try_error!(ctx, "Error: broken channel {}", e.to_string());
                 break;
             }
         };
         match event {
             ObserverEvent::Terminate => {
-                info!(ctx.expect_logger(), "Received termination event from Chainhook SDK");
+                try_info!(ctx, "Received termination event from Chainhook SDK");
                 break;
             }
             _ => {}
