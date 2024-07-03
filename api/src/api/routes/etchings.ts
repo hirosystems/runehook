@@ -44,7 +44,7 @@ export const EtchingRoutes: FastifyPluginCallback<
     async (request, reply) => {
       const offset = request.query.offset ?? 0;
       const limit = request.query.limit ?? 20;
-      const results = await fastify.db.getEtchings(offset, limit);
+      const results = await fastify.db.getRuneEtchings(offset, limit);
       await reply.send({
         limit,
         offset,
@@ -72,7 +72,7 @@ export const EtchingRoutes: FastifyPluginCallback<
       },
     },
     async (request, reply) => {
-      const rune = await fastify.db.getEtching(request.params.etching);
+      const rune = await fastify.db.getRuneEtching(request.params.etching);
       if (!rune) {
         await reply.code(404).send(Value.Create(NotFoundResponse));
       } else {

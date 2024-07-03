@@ -221,11 +221,11 @@ pub async fn pg_insert_balance_changes(
                 INSERT INTO balance_changes (rune_id, block_height, address, balance, total_operations)
                 VALUES ($1, $2, $3,
                     COALESCE((SELECT balance FROM previous), 0) {} $4,
-                    COALESCE((SELECT total_operations FROM previous), 0) {} $5)
+                    COALESCE((SELECT total_operations FROM previous), 0) + $5)
                 ON CONFLICT (rune_id, block_height, address) DO UPDATE SET
                     balance = EXCLUDED.balance,
                     total_operations = EXCLUDED.total_operations",
-                sign, sign
+                sign
             )
             .as_str(),
         )
