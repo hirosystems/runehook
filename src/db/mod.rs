@@ -33,6 +33,12 @@ pub async fn pg_connect(config: &Config, run_migrations: bool, ctx: &Context) ->
         pg_config.password(password);
     }
 
+    try_info!(
+        ctx,
+        "Connecting to postgres at {}:{}",
+        config.postgres.host,
+        config.postgres.port
+    );
     let mut pg_client: Client;
     loop {
         match pg_config.connect(NoTls).await {
@@ -71,6 +77,7 @@ pub async fn pg_connect(config: &Config, run_migrations: bool, ctx: &Context) ->
     pg_client
 }
 
+#[cfg(test)]
 pub async fn pg_test_client() -> Client {
     let (client, connection) =
         tokio_postgres::connect("host=localhost user=postgres password=postgres", NoTls)
@@ -252,39 +259,45 @@ pub async fn pg_insert_ledger_entries(
     db_tx: &mut Transaction<'_>,
     ctx: &Context,
 ) -> Result<bool, Error> {
-    let stmt = db_tx
-        .prepare(
-            "INSERT INTO ledger
-        (rune_id, block_hash, block_height, tx_index, event_index, tx_id, output, address, receiver_address, amount, operation,
-         timestamp)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
-        )
-        .await
-        .expect("Unable to prepare statement");
-    for row in rows.iter() {
+    for chunk in rows.chunks(500) {
+        let mut arg_num = 1;
+        let mut arg_str = String::new();
+        let mut params: Vec<&(dyn ToSql + Sync)> = vec![];
+        for row in chunk.iter() {
+            arg_str.push_str("(");
+            for i in 0..12 {
+                arg_str.push_str(format!("${},", arg_num + i).as_str());
+            }
+            arg_str.pop();
+            arg_str.push_str("),");
+            arg_num += 12;
+            params.push(&row.rune_id);
+            params.push(&row.block_hash);
+            params.push(&row.block_height);
+            params.push(&row.tx_index);
+            params.push(&row.event_index);
+            params.push(&row.tx_id);
+            params.push(&row.output);
+            params.push(&row.address);
+            params.push(&row.receiver_address);
+            params.push(&row.amount);
+            params.push(&row.operation);
+            params.push(&row.timestamp);
+        }
+        arg_str.pop();
         match db_tx
-            .execute(
-                &stmt,
-                &[
-                    &row.rune_id,
-                    &row.block_hash,
-                    &row.block_height,
-                    &row.tx_index,
-                    &row.event_index,
-                    &row.tx_id,
-                    &row.output,
-                    &row.address,
-                    &row.receiver_address,
-                    &row.amount,
-                    &row.operation,
-                    &row.timestamp,
-                ],
+            .query(
+                &format!("INSERT INTO ledger
+                    (rune_id, block_hash, block_height, tx_index, event_index, tx_id, output, address, receiver_address, amount,
+                    operation, timestamp)
+                    VALUES {}", arg_str),
+                &params,
             )
             .await
         {
             Ok(_) => {}
             Err(e) => {
-                try_error!(ctx, "Error inserting ledger entry: {:?} {:?}", e, row);
+                try_error!(ctx, "Error inserting ledger entries: {:?}", e);
                 panic!()
             }
         };
@@ -337,10 +350,7 @@ pub async fn pg_get_max_rune_number(client: &mut Client, _ctx: &Context) -> u32 
 
 pub async fn pg_get_block_height(client: &mut Client, _ctx: &Context) -> Option<u64> {
     let row = client
-        .query_opt(
-            "SELECT MAX(block_height) AS max FROM runes WHERE id <> '1:0'",
-            &[],
-        )
+        .query_opt("SELECT MAX(block_height) AS max FROM ledger", &[])
         .await
         .expect("error getting max block height")?;
     let max: Option<PgNumericU64> = row.get("max");
