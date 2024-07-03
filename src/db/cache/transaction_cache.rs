@@ -120,9 +120,9 @@ impl TransactionCache {
             }
         }
         if first_eligible_output.is_none() {
-            try_warn!(
+            try_info!(
                 ctx,
-                "No eligible non-OP_RETURN output found {}",
+                "No eligible non-OP_RETURN output found, all runes will be burnt {}",
                 self.location
             );
         }
@@ -328,7 +328,7 @@ impl TransactionCache {
         };
         // Take all the available inputs for the rune we're trying to move.
         let Some(available_inputs) = self.input_runes.get_mut(&rune_id) else {
-            try_warn!(
+            try_info!(
                 ctx,
                 "No unallocated runes {} remain for edict {}",
                 edict.id,
@@ -346,7 +346,7 @@ impl TransactionCache {
         let mut results = vec![];
         if self.eligible_outputs.len() == 0 {
             // No eligible outputs means burn.
-            try_warn!(
+            try_info!(
                 ctx,
                 "No eligible outputs for edict on rune {} {}",
                 edict.id,
@@ -428,9 +428,9 @@ impl TransactionCache {
                     ));
                 }
                 _ => {
-                    try_warn!(
+                    try_info!(
                         ctx,
-                        "Edict for {} attempted move to nonexistent output {} {}",
+                        "Edict for {} attempted move to nonexistent output {}, amount will be burnt {}",
                         edict.id,
                         edict.output,
                         self.location
@@ -555,9 +555,9 @@ fn move_rune_balance_to_output(
                 }
             },
             None => {
-                try_warn!(
+                try_info!(
                     ctx,
-                    "Attempted move to non-eligible output {} {}",
+                    "Attempted move to non-eligible output {}, runes will be burnt {}",
                     output,
                     location
                 );

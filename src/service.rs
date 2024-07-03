@@ -23,7 +23,9 @@ pub async fn start_service(config: &Config, ctx: &Context) -> Result<(), String>
 
     let (observer_cmd_tx, observer_cmd_rx) = channel();
     let (observer_event_tx, observer_event_rx) = crossbeam_channel::unbounded();
-    let observer_sidecar = set_up_observer_sidecar_runloop(config, ctx).await?;
+    let observer_sidecar = set_up_observer_sidecar_runloop(config, ctx)
+        .await
+        .expect("unable to set up observer sidecar");
 
     let chain_tip = pg_get_block_height(&mut pg_client, ctx)
         .await
@@ -41,7 +43,7 @@ pub async fn start_service(config: &Config, ctx: &Context) -> Result<(), String>
         } else if bitcoind_chain_tip > chain_tip {
             try_info!(
                 ctx,
-                "Scanning on block range {} to {}",
+                "Scanning block range {} to {}",
                 chain_tip,
                 bitcoind_chain_tip
             );
