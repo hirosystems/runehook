@@ -306,6 +306,37 @@ pub async fn pg_insert_ledger_entries(
     Ok(true)
 }
 
+pub async fn pg_roll_back_block(block_height: u64, db_tx: &mut Transaction<'_>, _ctx: &Context) {
+    db_tx
+        .execute(
+            "DELETE FROM balance_changes WHERE block_height = $1",
+            &[&PgNumericU64(block_height)],
+        )
+        .await
+        .expect("error rolling back balance_changes");
+    db_tx
+        .execute(
+            "DELETE FROM supply_changes WHERE block_height = $1",
+            &[&PgNumericU64(block_height)],
+        )
+        .await
+        .expect("error rolling back supply_changes");
+    db_tx
+        .execute(
+            "DELETE FROM ledger WHERE block_height = $1",
+            &[&PgNumericU64(block_height)],
+        )
+        .await
+        .expect("error rolling back ledger");
+    db_tx
+        .execute(
+            "DELETE FROM runes WHERE block_height = $1",
+            &[&PgNumericU64(block_height)],
+        )
+        .await
+        .expect("error rolling back runes");
+}
+
 pub async fn pg_get_max_rune_number(client: &mut Client, _ctx: &Context) -> u32 {
     let row = client
         .query_opt("SELECT MAX(number) AS max FROM runes", &[])

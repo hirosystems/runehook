@@ -16,6 +16,8 @@ use ordinals::Artifact;
 use ordinals::Runestone;
 use tokio_postgres::Client;
 
+use crate::db::pg_roll_back_block;
+
 use super::cache::index_cache::IndexCache;
 
 pub fn get_rune_genesis_block_height(network: Network) -> u64 {
@@ -61,6 +63,7 @@ fn bitcoin_tx_from_chainhook_tx(
     }
 }
 
+/// Index a Bitcoin block for runes data.
 pub async fn index_block(
     pg_client: &mut Client,
     index_cache: &mut IndexCache,
@@ -131,6 +134,31 @@ pub async fn index_block(
     info!(
         ctx.expect_logger(),
         "Block {} indexed in {}s",
+        block_height,
+        stopwatch.elapsed().as_millis() as f32 / 1000.0
+    );
+}
+
+/// Roll back a Bitcoin block because of a re-org.
+pub async fn roll_back_block(
+    pg_client: &mut Client,
+    block_height: u64,
+    ctx: &Context,
+) {
+    let stopwatch = std::time::Instant::now();
+    info!(ctx.expect_logger(), "Rolling back block {}...", block_height);
+    let mut db_tx = pg_client
+        .transaction()
+        .await
+        .expect("Unable to begin block roll back pg transaction");
+    pg_roll_back_block(block_height, &mut db_tx, ctx).await;
+    db_tx
+        .commit()
+        .await
+        .expect("Unable to commit pg transaction");
+    info!(
+        ctx.expect_logger(),
+        "Block {} rolled back in {}s",
         block_height,
         stopwatch.elapsed().as_millis() as f32 / 1000.0
     );
