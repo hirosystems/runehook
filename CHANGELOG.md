@@ -1,3 +1,10 @@
+## [0.3.0-beta.1](https://github.com/hirosystems/runehook/compare/v0.2.2...v0.3.0-beta.1) (2024-07-04)
+
+
+### Features
+
+* add zeromq streaming and rollback support ([#8](https://github.com/hirosystems/runehook/issues/8)) ([c201bb5](https://github.com/hirosystems/runehook/commit/c201bb521b2fb30e4983d4f601ac7719907c2d26))
+
 ## [0.2.2](https://github.com/hirosystems/runehook/compare/v0.2.1...v0.2.2) (2024-07-02)
 
 
