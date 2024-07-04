@@ -11,16 +11,18 @@ use chainhook_sdk::{
 };
 use lru::LruCache;
 use ordinals::{Cenotaph, Edict, Etching, Rune, RuneId, Runestone};
-use tokio_postgres::Transaction;
+use tokio_postgres::{Client, Transaction};
 
 use crate::{
+    config::Config,
     db::{
         models::{
             db_balance_change::DbBalanceChange, db_ledger_entry::DbLedgerEntry,
             db_ledger_operation::DbLedgerOperation, db_rune::DbRune,
             db_supply_change::DbSupplyChange,
         },
-        pg_get_missed_input_rune_balances, pg_get_rune_by_id, pg_get_rune_total_mints,
+        pg_get_max_rune_number, pg_get_missed_input_rune_balances, pg_get_rune_by_id,
+        pg_get_rune_total_mints,
     },
     try_debug, try_info, try_warn,
 };
@@ -49,17 +51,22 @@ pub struct IndexCache {
 }
 
 impl IndexCache {
-    pub fn new(network: Network, lru_cache_size: usize, max_rune_number: u32) -> Self {
-        let cap = NonZeroUsize::new(lru_cache_size).unwrap();
+    pub async fn new(config: &Config, pg_client: &mut Client, ctx: &Context) -> Self {
+        let network = config.get_bitcoin_network();
+        let cap = NonZeroUsize::new(config.resources.lru_cache_size).unwrap();
         IndexCache {
             network,
-            next_rune_number: max_rune_number + 1,
+            next_rune_number: pg_get_max_rune_number(pg_client, ctx).await + 1,
             rune_cache: LruCache::new(cap),
             rune_total_mints_cache: LruCache::new(cap),
             output_cache: LruCache::new(cap),
             tx_cache: TransactionCache::new(network, &"".to_string(), 1, 0, &"".to_string(), 0),
             db_cache: DbCache::new(),
         }
+    }
+
+    pub async fn reset_max_rune_number(&mut self, db_tx: &mut Transaction<'_>, ctx: &Context) {
+        self.next_rune_number = pg_get_max_rune_number(db_tx, ctx).await + 1;
     }
 
     /// Creates a fresh transaction index cache.

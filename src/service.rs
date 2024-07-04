@@ -3,7 +3,6 @@ use std::sync::mpsc::channel;
 use crate::bitcoind::bitcoind_get_block_height;
 use crate::config::Config;
 use crate::db::cache::index_cache::IndexCache;
-use crate::db::cache::new_index_cache;
 use crate::db::index::{get_rune_genesis_block_height, index_block, roll_back_block};
 use crate::db::{pg_connect, pg_get_block_height};
 use crate::scan::bitcoin::scan_blocks;
@@ -19,7 +18,7 @@ use tokio_postgres::Client;
 
 pub async fn start_service(config: &Config, ctx: &Context) -> Result<(), String> {
     let mut pg_client = pg_connect(&config, true, ctx).await;
-    let mut index_cache = new_index_cache(config, &mut pg_client, ctx).await;
+    let mut index_cache = IndexCache::new(config, &mut pg_client, ctx).await;
 
     let (observer_cmd_tx, observer_cmd_rx) = channel();
     let (observer_event_tx, observer_event_rx) = crossbeam_channel::unbounded();
@@ -123,7 +122,7 @@ pub async fn set_up_observer_sidecar_runloop(
     let _ = hiro_system_kit::thread_named("Observer Sidecar Runloop").spawn(move || {
         hiro_system_kit::nestable_block_on(async {
             let mut pg_client = pg_connect(&config, false, &ctx).await;
-            let mut index_cache = new_index_cache(&config, &mut pg_client, &ctx).await;
+            let mut index_cache = IndexCache::new(&config, &mut pg_client, &ctx).await;
             loop {
                 select! {
                     recv(block_mutator_in_rx) -> msg => {

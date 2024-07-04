@@ -31,6 +31,7 @@ pub fn get_rune_genesis_block_height(network: Network) -> u64 {
     }
 }
 
+/// Transforms a Bitcoin transaction from a Chainhook format to a rust bitcoin format so it can be consumed by ord.
 fn bitcoin_tx_from_chainhook_tx(
     block: &BitcoinBlockData,
     tx: &BitcoinTransactionData,
@@ -75,10 +76,12 @@ pub async fn index_block(
     let block_hash = &block.block_identifier.hash;
     let block_height = block.block_identifier.index;
     try_info!(ctx, "Indexing block {}...", block_height);
+
     let mut db_tx = pg_client
         .transaction()
         .await
         .expect("Unable to begin block processing pg transaction");
+    index_cache.reset_max_rune_number(&mut db_tx, ctx).await;
     for tx in block.transactions.iter() {
         let transaction = bitcoin_tx_from_chainhook_tx(block, tx);
         let tx_index = tx.metadata.index;

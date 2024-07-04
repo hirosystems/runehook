@@ -8,7 +8,7 @@ use models::{
 };
 use ordinals::RuneId;
 use refinery::embed_migrations;
-use tokio_postgres::{types::ToSql, Client, Error, NoTls, Transaction};
+use tokio_postgres::{types::ToSql, Client, Error, GenericClient, NoTls, Transaction};
 use types::{
     pg_bigint_u32::PgBigIntU32, pg_numeric_u128::PgNumericU128, pg_numeric_u64::PgNumericU64,
 };
@@ -345,7 +345,7 @@ pub async fn pg_roll_back_block(block_height: u64, db_tx: &mut Transaction<'_>, 
         .expect("error rolling back runes");
 }
 
-pub async fn pg_get_max_rune_number(client: &mut Client, _ctx: &Context) -> u32 {
+pub async fn pg_get_max_rune_number<T: GenericClient>(client: &T, _ctx: &Context) -> u32 {
     let row = client
         .query_opt("SELECT MAX(number) AS max FROM runes", &[])
         .await
