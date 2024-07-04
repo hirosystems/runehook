@@ -8,9 +8,13 @@ function divisibility(num: string | BigNumber, decimals: number): string {
 
 export function parseEtchingResponse(rune: DbRuneWithChainTip): EtchingResponse {
   let mintable = true;
+  const minted = rune.minted == null ? '0' : rune.minted;
+  const total_mints = rune.total_mints == null ? '0' : rune.total_mints;
+  const burned = rune.burned == null ? '0' : rune.burned;
+  const total_burns = rune.total_burns == null ? '0' : rune.total_burns;
   if (
     rune.terms_amount == null ||
-    (rune.terms_cap && BigNumber(rune.total_mints).gte(rune.terms_cap)) ||
+    (rune.terms_cap && BigNumber(total_mints).gte(rune.terms_cap)) ||
     (rune.terms_height_start && BigNumber(rune.chain_tip).lt(rune.terms_height_start)) ||
     (rune.terms_height_end && BigNumber(rune.chain_tip).gt(rune.terms_height_end)) ||
     (rune.terms_offset_start &&
@@ -37,17 +41,15 @@ export function parseEtchingResponse(rune: DbRuneWithChainTip): EtchingResponse 
     },
     supply: {
       premine: divisibility(rune.premine, rune.divisibility),
-      current: divisibility(
-        BigNumber(rune.minted).plus(rune.burned).plus(rune.premine),
-        rune.divisibility
-      ),
-      minted: divisibility(rune.minted, rune.divisibility),
-      total_mints: rune.total_mints,
-      burned: divisibility(rune.burned, rune.divisibility),
-      total_burns: rune.total_burns,
-      mint_percentage: rune.terms_cap
-        ? BigNumber(rune.total_mints).div(rune.terms_cap).times(100).toFixed(4)
-        : '0.0000',
+      current: divisibility(BigNumber(minted).plus(burned).plus(rune.premine), rune.divisibility),
+      minted: divisibility(minted, rune.divisibility),
+      total_mints,
+      burned: divisibility(burned, rune.divisibility),
+      total_burns,
+      mint_percentage:
+        rune.terms_cap != null && rune.terms_cap != '0'
+          ? BigNumber(total_mints).div(rune.terms_cap).times(100).toFixed(4)
+          : '0.0000',
       mintable,
     },
     turbo: rune.turbo,

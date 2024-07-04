@@ -89,29 +89,51 @@ export class PgStore extends BasePgStore {
     return result[0]?.block_height;
   }
 
-  async getEtching(id: Rune): Promise<DbRuneWithChainTip | undefined> {
-    const result = await this.sql<DbRuneWithChainTip[]>`
-      SELECT *, (SELECT MAX(block_height) FROM ledger) AS chain_tip
-      FROM runes WHERE ${runeFilter(this.sql, id)}
-    `;
-    if (result.count == 0) return undefined;
-    return result[0];
-  }
-
-  async getEtchings(offset: Offset, limit: Limit): Promise<DbPaginatedResult<DbRuneWithChainTip>> {
+  private async getEtchings(
+    id?: Rune,
+    offset: Offset = 0,
+    limit: Limit = 1
+  ): Promise<DbPaginatedResult<DbRuneWithChainTip>> {
     const results = await this.sql<DbCountedQueryResult<DbRuneWithChainTip>[]>`
       WITH
         rune_count AS (SELECT COALESCE(MAX(number), 0) + 1 AS total FROM runes),
-        max AS (SELECT MAX(block_height) AS chain_tip FROM ledger)
-      SELECT *, (SELECT total FROM rune_count), (SELECT chain_tip FROM max)
-      FROM runes
-      ORDER BY block_height DESC, tx_index DESC
-      OFFSET ${offset} LIMIT ${limit}
+        max AS (SELECT MAX(block_height) AS chain_tip FROM ledger),
+        results AS (
+          SELECT *
+          FROM runes
+          ${id ? this.sql`WHERE ${runeFilter(this.sql, id)}` : this.sql``}
+          ORDER BY block_height DESC, tx_index DESC
+          OFFSET ${offset} LIMIT ${limit}
+        ),
+        recent_supplies AS (
+          SELECT DISTINCT ON (rune_id) *
+          FROM supply_changes
+          WHERE rune_id IN (SELECT id FROM results)
+          ORDER BY rune_id, block_height DESC
+        )
+        SELECT r.*, s.minted, s.total_mints, s.burned, s.total_burns,
+          (SELECT total FROM rune_count), (SELECT chain_tip FROM max)
+        FROM results AS r
+        INNER JOIN recent_supplies AS s ON r.id = s.rune_id
+        ORDER BY r.block_height DESC, r.tx_index DESC
     `;
     return {
       total: results[0]?.total ?? 0,
       results,
     };
+  }
+
+  async getRuneEtching(id: Rune): Promise<DbRuneWithChainTip | undefined> {
+    const result = await this.getEtchings(id);
+    if (result.total == 0) return undefined;
+    return result.results[0];
+  }
+
+  async getRuneEtchings(
+    offset: Offset,
+    limit: Limit
+  ): Promise<DbPaginatedResult<DbRuneWithChainTip>> {
+    return this.getEtchings(undefined, offset, limit);
   }
 
   private async getActivity(
@@ -171,11 +193,16 @@ export class PgStore extends BasePgStore {
     limit: Limit
   ): Promise<DbPaginatedResult<DbItemWithRune<DbBalance>>> {
     const results = await this.sql<DbCountedQueryResult<DbItemWithRune<DbBalance>>[]>`
-      SELECT b.*, r.name, r.spaced_name, r.divisibility, COUNT(*) OVER() AS total
-      FROM balances AS b
-      INNER JOIN runes AS r ON r.id = b.rune_id
-      WHERE ${runeFilter(this.sql, id, 'r')}
-      ORDER BY b.balance DESC
+      WITH grouped AS (
+        SELECT DISTINCT ON (b.address) b.address, b.balance, b.total_operations, b.rune_id, r.name,
+          r.spaced_name, r.divisibility, COUNT(*) OVER() AS total
+        FROM balance_changes AS b
+        INNER JOIN runes AS r ON r.id = b.rune_id
+        WHERE ${runeFilter(this.sql, id, 'r')}
+        ORDER BY b.address, b.block_height DESC
+      )
+      SELECT * FROM grouped
+      ORDER BY balance DESC
       OFFSET ${offset} LIMIT ${limit}
     `;
     return {
@@ -189,10 +216,13 @@ export class PgStore extends BasePgStore {
     address: Address
   ): Promise<DbItemWithRune<DbBalance> | undefined> {
     const results = await this.sql<DbItemWithRune<DbBalance>[]>`
-      SELECT b.*, r.name, r.spaced_name, r.divisibility
-      FROM balances AS b
+      SELECT b.rune_id, b.address, b.balance, b.total_operations, r.name,
+        r.spaced_name, r.divisibility, COUNT(*) OVER() AS total
+      FROM balance_changes AS b
       INNER JOIN runes AS r ON r.id = b.rune_id
       WHERE ${runeFilter(this.sql, id, 'r')} AND address = ${address}
+      ORDER BY b.block_height DESC
+      LIMIT 1
     `;
     return results[0];
   }
@@ -203,10 +233,15 @@ export class PgStore extends BasePgStore {
     limit: Limit
   ): Promise<DbPaginatedResult<DbItemWithRune<DbBalance>>> {
     const results = await this.sql<DbCountedQueryResult<DbItemWithRune<DbBalance>>[]>`
-      SELECT b.*, r.name, r.spaced_name, r.divisibility, COUNT(*) OVER() AS total
-      FROM balances AS b
-      INNER JOIN runes AS r ON r.id = b.rune_id
-      WHERE address = ${address}
+      WITH grouped AS (
+        SELECT DISTINCT ON (b.rune_id) b.address, b.balance, b.total_operations, b.rune_id, r.name,
+          r.spaced_name, r.divisibility, COUNT(*) OVER() AS total
+        FROM balance_changes AS b
+        INNER JOIN runes AS r ON r.id = b.rune_id
+        WHERE address = ${address}
+        ORDER BY b.rune_id, b.block_height DESC
+      )
+      SELECT * FROM grouped
       ORDER BY balance DESC
       OFFSET ${offset} LIMIT ${limit}
     `;
