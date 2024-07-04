@@ -27,7 +27,12 @@
         "npmPublish": false
       }
     ],
-    "@semantic-release-cargo/semantic-release-cargo",
+    [
+      "@semantic-release/exec",
+      {
+        "prepareCmd": "sed -i -e '1h;2,$H;$!d;g' -e 's@name = \"runehook\"\\nversion = \"[^\"]*\"@name = \"runehook\"\\nversion = \"${nextRelease.version}\"@g' Cargo.toml Cargo.lock"
+      }
+    ],
     "@semantic-release/github",
     "@semantic-release/changelog",
     [
