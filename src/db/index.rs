@@ -16,6 +16,9 @@ use ordinals::Artifact;
 use ordinals::Runestone;
 use tokio_postgres::Client;
 
+use crate::db::pg_roll_back_block;
+use crate::try_info;
+
 use super::cache::index_cache::IndexCache;
 
 pub fn get_rune_genesis_block_height(network: Network) -> u64 {
@@ -28,6 +31,7 @@ pub fn get_rune_genesis_block_height(network: Network) -> u64 {
     }
 }
 
+/// Transforms a Bitcoin transaction from a Chainhook format to a rust bitcoin format so it can be consumed by ord.
 fn bitcoin_tx_from_chainhook_tx(
     block: &BitcoinBlockData,
     tx: &BitcoinTransactionData,
@@ -61,6 +65,7 @@ fn bitcoin_tx_from_chainhook_tx(
     }
 }
 
+/// Index a Bitcoin block for runes data.
 pub async fn index_block(
     pg_client: &mut Client,
     index_cache: &mut IndexCache,
@@ -70,11 +75,13 @@ pub async fn index_block(
     let stopwatch = std::time::Instant::now();
     let block_hash = &block.block_identifier.hash;
     let block_height = block.block_identifier.index;
-    info!(ctx.expect_logger(), "Indexing block {}...", block_height);
+    try_info!(ctx, "Indexing block {}...", block_height);
+
     let mut db_tx = pg_client
         .transaction()
         .await
         .expect("Unable to begin block processing pg transaction");
+    index_cache.reset_max_rune_number(&mut db_tx, ctx).await;
     for tx in block.transactions.iter() {
         let transaction = bitcoin_tx_from_chainhook_tx(block, tx);
         let tx_index = tx.metadata.index;
@@ -128,9 +135,30 @@ pub async fn index_block(
         .commit()
         .await
         .expect("Unable to commit pg transaction");
-    info!(
-        ctx.expect_logger(),
+    try_info!(
+        ctx,
         "Block {} indexed in {}s",
+        block_height,
+        stopwatch.elapsed().as_millis() as f32 / 1000.0
+    );
+}
+
+/// Roll back a Bitcoin block because of a re-org.
+pub async fn roll_back_block(pg_client: &mut Client, block_height: u64, ctx: &Context) {
+    let stopwatch = std::time::Instant::now();
+    try_info!(ctx, "Rolling back block {}...", block_height);
+    let mut db_tx = pg_client
+        .transaction()
+        .await
+        .expect("Unable to begin block roll back pg transaction");
+    pg_roll_back_block(block_height, &mut db_tx, ctx).await;
+    db_tx
+        .commit()
+        .await
+        .expect("Unable to commit pg transaction");
+    try_info!(
+        ctx,
+        "Block {} rolled back in {}s",
         block_height,
         stopwatch.elapsed().as_millis() as f32 / 1000.0
     );

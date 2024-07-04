@@ -1,7 +1,8 @@
 use crate::bitcoind::bitcoind_get_block_height;
 use crate::config::Config;
 use crate::db::cache::index_cache::IndexCache;
-use crate::db::index::index_block;
+use crate::db::index::{index_block, roll_back_block};
+use crate::{try_error, try_info};
 use chainhook_sdk::chainhooks::bitcoin::{
     evaluate_bitcoin_chainhooks_on_chain_event, handle_bitcoin_hook_action,
     BitcoinChainhookOccurrence, BitcoinTriggerChainhook,
@@ -18,6 +19,12 @@ use chainhook_sdk::types::{
 use chainhook_sdk::utils::{file_append, send_request, BlockHeights, Context};
 use std::collections::HashMap;
 use tokio_postgres::Client;
+
+pub async fn drop_blocks(start_block: u64, end_block: u64, pg_client: &mut Client, ctx: &Context) {
+    for block in start_block..=end_block {
+        roll_back_block(pg_client, block, ctx).await;
+    }
+}
 
 pub async fn scan_blocks(
     blocks: Vec<u64>,
@@ -89,9 +96,9 @@ pub async fn scan_bitcoin_chainstate_via_rpc_using_predicate(
     let mut block_heights_to_scan =
         block_heights_to_scan_res.map_err(|_e| format!("Block start / end block spec invalid"))?;
 
-    info!(
-        ctx.expect_logger(),
-        "Starting predicate evaluation on {} Bitcoin blocks",
+    try_info!(
+        ctx,
+        "Scanning {} Bitcoin blocks",
         block_heights_to_scan.len()
     );
     let mut actions_triggered = 0;
@@ -154,8 +161,8 @@ pub async fn scan_bitcoin_chainstate_via_rpc_using_predicate(
             }
         }
     }
-    info!(
-        ctx.expect_logger(),
+    try_info!(
+        ctx,
         "{number_of_blocks_scanned} blocks scanned, {actions_triggered} actions triggered"
     );
 
@@ -193,7 +200,7 @@ async fn execute_predicates_action<'a>(
         }
         match handle_bitcoin_hook_action(trigger, &proofs) {
             Err(e) => {
-                error!(ctx.expect_logger(), "unable to handle action {}", e);
+                try_error!(ctx, "unable to handle action {}", e);
             }
             Ok(action) => {
                 actions_triggered += 1;

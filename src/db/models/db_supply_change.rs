@@ -1,9 +1,10 @@
-use crate::db::types::pg_numeric_u128::PgNumericU128;
+use crate::db::types::{pg_numeric_u128::PgNumericU128, pg_numeric_u64::PgNumericU64};
 
 /// An update to a rune that affects its total counts.
 #[derive(Debug, Clone)]
-pub struct DbRuneUpdate {
-    pub id: String,
+pub struct DbSupplyChange {
+    pub rune_id: String,
+    pub block_height: PgNumericU64,
     pub minted: PgNumericU128,
     pub total_mints: PgNumericU128,
     pub burned: PgNumericU128,
@@ -11,10 +12,11 @@ pub struct DbRuneUpdate {
     pub total_operations: PgNumericU128,
 }
 
-impl DbRuneUpdate {
-    pub fn from_mint(id: String, amount: PgNumericU128) -> Self {
-        DbRuneUpdate {
-            id,
+impl DbSupplyChange {
+    pub fn from_mint(id: String, block_height: PgNumericU64, amount: PgNumericU128) -> Self {
+        DbSupplyChange {
+            rune_id: id,
+            block_height,
             minted: amount,
             total_mints: PgNumericU128(1),
             burned: PgNumericU128(0),
@@ -23,9 +25,10 @@ impl DbRuneUpdate {
         }
     }
 
-    pub fn from_burn(id: String, amount: PgNumericU128) -> Self {
-        DbRuneUpdate {
-            id,
+    pub fn from_burn(id: String, block_height: PgNumericU64, amount: PgNumericU128) -> Self {
+        DbSupplyChange {
+            rune_id: id,
+            block_height,
             minted: PgNumericU128(0),
             total_mints: PgNumericU128(0),
             burned: amount,
@@ -34,9 +37,10 @@ impl DbRuneUpdate {
         }
     }
 
-    pub fn from_operation(id: String) -> Self {
-        DbRuneUpdate {
-            id,
+    pub fn from_operation(id: String, block_height: PgNumericU64) -> Self {
+        DbSupplyChange {
+            rune_id: id,
+            block_height,
             minted: PgNumericU128(0),
             total_mints: PgNumericU128(0),
             burned: PgNumericU128(0),

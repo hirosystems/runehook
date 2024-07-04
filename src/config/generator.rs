@@ -1,5 +1,6 @@
 pub fn generate_config() -> String {
-    let conf = format!(r#"
+    let conf = format!(
+        r#"
 [postgres]
 username = "postgres"
 password = "postgres"
@@ -20,6 +21,7 @@ lru_cache_size = 50000
 [logs]
 runes_internals = true
 chainhook_internals = false
-"#);
+"#
+    );
     return conf;
 }

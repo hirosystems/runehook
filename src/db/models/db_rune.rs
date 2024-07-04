@@ -30,11 +30,6 @@ pub struct DbRune {
     pub terms_offset_start: Option<PgNumericU64>,
     pub terms_offset_end: Option<PgNumericU64>,
     pub turbo: bool,
-    pub minted: PgNumericU128,
-    pub total_mints: PgNumericU128,
-    pub burned: PgNumericU128,
-    pub total_burns: PgNumericU128,
-    pub total_operations: PgNumericU128,
     pub timestamp: PgBigIntU32,
 }
 
@@ -92,11 +87,6 @@ impl DbRune {
             terms_offset_start,
             terms_offset_end,
             turbo: etching.turbo,
-            minted: PgNumericU128(0),
-            total_mints: PgNumericU128(0),
-            burned: PgNumericU128(0),
-            total_burns: PgNumericU128(0),
-            total_operations: PgNumericU128(0),
             timestamp: PgBigIntU32(location.timestamp),
         }
     }
@@ -121,11 +111,6 @@ impl DbRune {
             terms_offset_start: None,
             terms_offset_end: None,
             turbo: false,
-            minted: PgNumericU128(0),
-            total_mints: PgNumericU128(0),
-            burned: PgNumericU128(0),
-            total_burns: PgNumericU128(0),
-            total_operations: PgNumericU128(0),
             timestamp: PgBigIntU32(location.timestamp),
         }
     }
@@ -150,11 +135,6 @@ impl DbRune {
             terms_offset_start: row.get("terms_offset_start"),
             terms_offset_end: row.get("terms_offset_end"),
             turbo: row.get("turbo"),
-            minted: row.get("minted"),
-            total_mints: row.get("total_mints"),
-            burned: row.get("burned"),
-            total_burns: row.get("total_burns"),
-            total_operations: row.get("total_operations"),
             timestamp: row.get("timestamp"),
         }
     }
@@ -175,7 +155,8 @@ impl DbRune {
             number: PgBigIntU32(1),
             name: "ZZZZZFEHUZZZZZ".to_string(),
             spaced_name: "Z•Z•Z•Z•Z•FEHU•Z•Z•Z•Z•Z".to_string(),
-            block_hash: "0000000000000000000320283a032748cef8227873ff4872689bf23f1cda83a5".to_string(),
+            block_hash: "0000000000000000000320283a032748cef8227873ff4872689bf23f1cda83a5"
+                .to_string(),
             block_height: PgNumericU64(840000),
             tx_index: PgBigIntU32(1),
             tx_id: "2bb85f4b004be6da54f766c17c1e855187327112c231ef2ff35ebad0ea67c69e".to_string(),
@@ -189,11 +170,6 @@ impl DbRune {
             terms_offset_start: None,
             terms_offset_end: None,
             turbo: true,
-            minted: PgNumericU128(0),
-            total_mints: PgNumericU128(0),
-            burned: PgNumericU128(0),
-            total_burns: PgNumericU128(0),
-            total_operations: PgNumericU128(0),
             timestamp: PgBigIntU32(1713571767),
         }
     }

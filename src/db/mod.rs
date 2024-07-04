@@ -3,17 +3,17 @@ use std::{collections::HashMap, str::FromStr};
 use cache::transaction_cache::InputRuneBalance;
 use chainhook_sdk::utils::Context;
 use models::{
-    db_balance_update::DbBalanceUpdate, db_ledger_entry::DbLedgerEntry, db_rune::DbRune,
-    db_rune_update::DbRuneUpdate,
+    db_balance_change::DbBalanceChange, db_ledger_entry::DbLedgerEntry, db_rune::DbRune,
+    db_supply_change::DbSupplyChange,
 };
 use ordinals::RuneId;
 use refinery::embed_migrations;
-use tokio_postgres::{types::ToSql, Client, Error, NoTls, Transaction};
+use tokio_postgres::{types::ToSql, Client, Error, GenericClient, NoTls, Transaction};
 use types::{
     pg_bigint_u32::PgBigIntU32, pg_numeric_u128::PgNumericU128, pg_numeric_u64::PgNumericU64,
 };
 
-use crate::config::Config;
+use crate::{config::Config, try_error, try_info};
 
 pub mod cache;
 pub mod index;
@@ -33,6 +33,12 @@ pub async fn pg_connect(config: &Config, run_migrations: bool, ctx: &Context) ->
         pg_config.password(password);
     }
 
+    try_info!(
+        ctx,
+        "Connecting to postgres at {}:{}",
+        config.postgres.host,
+        config.postgres.port
+    );
     let mut pg_client: Client;
     loop {
         match pg_config.connect(NoTls).await {
@@ -46,18 +52,14 @@ pub async fn pg_connect(config: &Config, run_migrations: bool, ctx: &Context) ->
                 break;
             }
             Err(e) => {
-                error!(
-                    ctx.expect_logger(),
-                    "Error connecting to postgres: {}",
-                    e.to_string()
-                );
+                try_error!(ctx, "Error connecting to postgres: {}", e.to_string());
                 std::thread::sleep(std::time::Duration::from_secs(1));
             }
         }
     }
 
     if run_migrations {
-        info!(ctx.expect_logger(), "Running postgres migrations");
+        try_info!(ctx, "Running postgres migrations");
         match migrations::runner()
             .set_migration_table_name("pgmigrations")
             .run_async(&mut pg_client)
@@ -65,20 +67,17 @@ pub async fn pg_connect(config: &Config, run_migrations: bool, ctx: &Context) ->
         {
             Ok(_) => {}
             Err(e) => {
-                error!(
-                    ctx.expect_logger(),
-                    "error running pg migrations: {}",
-                    e.to_string()
-                );
+                try_error!(ctx, "error running pg migrations: {}", e.to_string());
                 panic!()
             }
         };
-        info!(ctx.expect_logger(), "Postgres migrations complete");
+        try_info!(ctx, "Postgres migrations complete");
     }
 
     pg_client
 }
 
+#[cfg(test)]
 pub async fn pg_test_client() -> Client {
     let (client, connection) =
         tokio_postgres::connect("host=localhost user=postgres password=postgres", NoTls)
@@ -92,52 +91,58 @@ pub async fn pg_test_client() -> Client {
     client
 }
 
-pub async fn pg_insert_rune_rows(
+pub async fn pg_insert_runes(
     rows: &Vec<DbRune>,
     db_tx: &mut Transaction<'_>,
     ctx: &Context,
 ) -> Result<bool, Error> {
-    let stmt = db_tx.prepare(
-        "INSERT INTO runes
-        (id, number, name, spaced_name, block_hash, block_height, tx_index, tx_id, divisibility, premine, symbol, terms_amount,
-         terms_cap, terms_height_start, terms_height_end, terms_offset_start, terms_offset_end, turbo, timestamp)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
-        ON CONFLICT (name) DO NOTHING"
-    ).await.expect("Unable to prepare statement");
-    for row in rows.iter() {
+    for chunk in rows.chunks(500) {
+        let mut arg_num = 1;
+        let mut arg_str = String::new();
+        let mut params: Vec<&(dyn ToSql + Sync)> = vec![];
+        for row in chunk.iter() {
+            arg_str.push_str("(");
+            for i in 0..19 {
+                arg_str.push_str(format!("${},", arg_num + i).as_str());
+            }
+            arg_str.pop();
+            arg_str.push_str("),");
+            arg_num += 19;
+            params.push(&row.id);
+            params.push(&row.number);
+            params.push(&row.name);
+            params.push(&row.spaced_name);
+            params.push(&row.block_hash);
+            params.push(&row.block_height);
+            params.push(&row.tx_index);
+            params.push(&row.tx_id);
+            params.push(&row.divisibility);
+            params.push(&row.premine);
+            params.push(&row.symbol);
+            params.push(&row.terms_amount);
+            params.push(&row.terms_cap);
+            params.push(&row.terms_height_start);
+            params.push(&row.terms_height_end);
+            params.push(&row.terms_offset_start);
+            params.push(&row.terms_offset_end);
+            params.push(&row.turbo);
+            params.push(&row.timestamp);
+        }
+        arg_str.pop();
         match db_tx
-            .execute(
-                &stmt,
-                &[
-                    &row.id,
-                    &row.number,
-                    &row.name,
-                    &row.spaced_name,
-                    &row.block_hash,
-                    &row.block_height,
-                    &row.tx_index,
-                    &row.tx_id,
-                    &row.divisibility,
-                    &row.premine,
-                    &row.symbol,
-                    &row.terms_amount,
-                    &row.terms_cap,
-                    &row.terms_height_start,
-                    &row.terms_height_end,
-                    &row.terms_offset_start,
-                    &row.terms_offset_end,
-                    &row.turbo,
-                    &row.timestamp,
-                ],
+            .query(
+                &format!("INSERT INTO runes
+                    (id, number, name, spaced_name, block_hash, block_height, tx_index, tx_id, divisibility, premine, symbol,
+                    terms_amount, terms_cap, terms_height_start, terms_height_end, terms_offset_start, terms_offset_end, turbo,
+                    timestamp) VALUES {}
+                    ON CONFLICT (name) DO NOTHING", arg_str),
+                &params,
             )
             .await
         {
             Ok(_) => {}
             Err(e) => {
-                error!(
-                    ctx.expect_logger(),
-                    "Error inserting rune: {:?} {:?}", e, row
-                );
+                try_error!(ctx, "Error inserting runes: {:?}", e);
                 panic!()
             }
         };
@@ -145,20 +150,32 @@ pub async fn pg_insert_rune_rows(
     Ok(true)
 }
 
-pub async fn pg_update_runes(
-    rows: &Vec<DbRuneUpdate>,
+pub async fn pg_insert_supply_changes(
+    rows: &Vec<DbSupplyChange>,
     db_tx: &mut Transaction<'_>,
     ctx: &Context,
 ) -> Result<bool, Error> {
     let stmt = db_tx
         .prepare(
-            "UPDATE runes
-        SET minted = minted + $1,
-            total_mints = total_mints + $2,
-            burned = burned + $3,
-            total_burns = total_burns + $4,
-            total_operations = total_operations + $5
-        WHERE id = $6",
+            "WITH previous AS (
+                SELECT * FROM supply_changes
+                WHERE rune_id = $1 AND block_height <= $2
+                ORDER BY block_height DESC LIMIT 1
+            )
+            INSERT INTO supply_changes
+            (rune_id, block_height, minted, total_mints, burned, total_burns, total_operations)
+            VALUES ($1, $2,
+                COALESCE((SELECT minted FROM previous), 0) + $3,
+                COALESCE((SELECT total_mints FROM previous), 0) + $4,
+                COALESCE((SELECT burned FROM previous), 0) + $5,
+                COALESCE((SELECT total_burns FROM previous), 0) + $6,
+                COALESCE((SELECT total_operations FROM previous), 0) + $7)
+            ON CONFLICT (rune_id, block_height) DO UPDATE SET
+                minted = EXCLUDED.minted,
+                total_mints = EXCLUDED.total_mints,
+                burned = EXCLUDED.burned,
+                total_burns = EXCLUDED.total_burns,
+                total_operations = EXCLUDED.total_operations",
         )
         .await
         .expect("Unable to prepare statement");
@@ -167,22 +184,20 @@ pub async fn pg_update_runes(
             .execute(
                 &stmt,
                 &[
+                    &row.rune_id,
+                    &row.block_height,
                     &row.minted,
                     &row.total_mints,
                     &row.burned,
                     &row.total_burns,
                     &row.total_operations,
-                    &row.id,
                 ],
             )
             .await
         {
             Ok(_) => {}
             Err(e) => {
-                error!(
-                    ctx.expect_logger(),
-                    "Error updating rune: {:?} {:?}", e, row
-                );
+                try_error!(ctx, "Error updating rune supply: {:?} {:?}", e, row);
                 panic!()
             }
         };
@@ -190,24 +205,32 @@ pub async fn pg_update_runes(
     Ok(true)
 }
 
-pub async fn pg_update_balances(
-    rows: &Vec<DbBalanceUpdate>,
+pub async fn pg_insert_balance_changes(
+    rows: &Vec<DbBalanceChange>,
     increase: bool,
     db_tx: &mut Transaction<'_>,
     ctx: &Context,
 ) -> Result<bool, Error> {
-    let stmt_str = if increase {
-        "INSERT INTO balances (rune_id, address, balance, total_operations) VALUES ($1, $2, $3, $4)
-        ON CONFLICT (rune_id, address) DO UPDATE SET
-            balance = balances.balance + EXCLUDED.balance,
-            total_operations = balances.total_operations + EXCLUDED.total_operations"
-    } else {
-        "UPDATE balances
-        SET balance = GREATEST(balance - $3, 0::numeric), total_operations = total_operations + $4
-        WHERE rune_id = $1 AND address = $2"
-    };
+    let sign = if increase { "+" } else { "-" };
     let stmt = db_tx
-        .prepare(stmt_str)
+        .prepare(
+            format!(
+                "WITH previous AS (
+                    SELECT * FROM balance_changes
+                    WHERE rune_id = $1 AND block_height <= $2 AND address = $3
+                    ORDER BY block_height DESC LIMIT 1
+                )
+                INSERT INTO balance_changes (rune_id, block_height, address, balance, total_operations)
+                VALUES ($1, $2, $3,
+                    COALESCE((SELECT balance FROM previous), 0) {} $4,
+                    COALESCE((SELECT total_operations FROM previous), 0) + $5)
+                ON CONFLICT (rune_id, block_height, address) DO UPDATE SET
+                    balance = EXCLUDED.balance,
+                    total_operations = EXCLUDED.total_operations",
+                sign
+            )
+            .as_str(),
+        )
         .await
         .expect("Unable to prepare statement");
     for row in rows.iter() {
@@ -216,6 +239,7 @@ pub async fn pg_update_balances(
                 &stmt,
                 &[
                     &row.rune_id,
+                    &row.block_height,
                     &row.address,
                     &row.balance,
                     &row.total_operations,
@@ -225,9 +249,12 @@ pub async fn pg_update_balances(
         {
             Ok(_) => {}
             Err(e) => {
-                error!(
-                    ctx.expect_logger(),
-                    "Error updating balance (increase={}): {:?} {:?}", increase, e, row
+                try_error!(
+                    ctx,
+                    "Error updating balance (increase={}): {:?} {:?}",
+                    increase,
+                    e,
+                    row
                 );
                 panic!()
             }
@@ -241,42 +268,45 @@ pub async fn pg_insert_ledger_entries(
     db_tx: &mut Transaction<'_>,
     ctx: &Context,
 ) -> Result<bool, Error> {
-    let stmt = db_tx
-        .prepare(
-            "INSERT INTO ledger
-        (rune_id, block_hash, block_height, tx_index, event_index, tx_id, output, address, receiver_address, amount, operation,
-         timestamp)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
-        )
-        .await
-        .expect("Unable to prepare statement");
-    for row in rows.iter() {
+    for chunk in rows.chunks(500) {
+        let mut arg_num = 1;
+        let mut arg_str = String::new();
+        let mut params: Vec<&(dyn ToSql + Sync)> = vec![];
+        for row in chunk.iter() {
+            arg_str.push_str("(");
+            for i in 0..12 {
+                arg_str.push_str(format!("${},", arg_num + i).as_str());
+            }
+            arg_str.pop();
+            arg_str.push_str("),");
+            arg_num += 12;
+            params.push(&row.rune_id);
+            params.push(&row.block_hash);
+            params.push(&row.block_height);
+            params.push(&row.tx_index);
+            params.push(&row.event_index);
+            params.push(&row.tx_id);
+            params.push(&row.output);
+            params.push(&row.address);
+            params.push(&row.receiver_address);
+            params.push(&row.amount);
+            params.push(&row.operation);
+            params.push(&row.timestamp);
+        }
+        arg_str.pop();
         match db_tx
-            .execute(
-                &stmt,
-                &[
-                    &row.rune_id,
-                    &row.block_hash,
-                    &row.block_height,
-                    &row.tx_index,
-                    &row.event_index,
-                    &row.tx_id,
-                    &row.output,
-                    &row.address,
-                    &row.receiver_address,
-                    &row.amount,
-                    &row.operation,
-                    &row.timestamp,
-                ],
+            .query(
+                &format!("INSERT INTO ledger
+                    (rune_id, block_hash, block_height, tx_index, event_index, tx_id, output, address, receiver_address, amount,
+                    operation, timestamp)
+                    VALUES {}", arg_str),
+                &params,
             )
             .await
         {
             Ok(_) => {}
             Err(e) => {
-                error!(
-                    ctx.expect_logger(),
-                    "Error inserting ledger entry: {:?} {:?}", e, row
-                );
+                try_error!(ctx, "Error inserting ledger entries: {:?}", e);
                 panic!()
             }
         };
@@ -284,7 +314,38 @@ pub async fn pg_insert_ledger_entries(
     Ok(true)
 }
 
-pub async fn pg_get_max_rune_number(client: &mut Client, _ctx: &Context) -> u32 {
+pub async fn pg_roll_back_block(block_height: u64, db_tx: &mut Transaction<'_>, _ctx: &Context) {
+    db_tx
+        .execute(
+            "DELETE FROM balance_changes WHERE block_height = $1",
+            &[&PgNumericU64(block_height)],
+        )
+        .await
+        .expect("error rolling back balance_changes");
+    db_tx
+        .execute(
+            "DELETE FROM supply_changes WHERE block_height = $1",
+            &[&PgNumericU64(block_height)],
+        )
+        .await
+        .expect("error rolling back supply_changes");
+    db_tx
+        .execute(
+            "DELETE FROM ledger WHERE block_height = $1",
+            &[&PgNumericU64(block_height)],
+        )
+        .await
+        .expect("error rolling back ledger");
+    db_tx
+        .execute(
+            "DELETE FROM runes WHERE block_height = $1",
+            &[&PgNumericU64(block_height)],
+        )
+        .await
+        .expect("error rolling back runes");
+}
+
+pub async fn pg_get_max_rune_number<T: GenericClient>(client: &T, _ctx: &Context) -> u32 {
     let row = client
         .query_opt("SELECT MAX(number) AS max FROM runes", &[])
         .await
@@ -298,10 +359,7 @@ pub async fn pg_get_max_rune_number(client: &mut Client, _ctx: &Context) -> u32 
 
 pub async fn pg_get_block_height(client: &mut Client, _ctx: &Context) -> Option<u64> {
     let row = client
-        .query_opt(
-            "SELECT MAX(block_height) AS max FROM runes WHERE id <> '1:0'",
-            &[],
-        )
+        .query_opt("SELECT MAX(block_height) AS max FROM ledger", &[])
         .await
         .expect("error getting max block height")?;
     let max: Option<PgNumericU64> = row.get("max");
@@ -323,11 +381,7 @@ pub async fn pg_get_rune_by_id(
     {
         Ok(row) => row,
         Err(e) => {
-            error!(
-                ctx.expect_logger(),
-                "error retrieving rune: {}",
-                e.to_string()
-            );
+            try_error!(ctx, "error retrieving rune: {}", e.to_string());
             panic!();
         }
     };
@@ -343,13 +397,16 @@ pub async fn pg_get_rune_total_mints(
     ctx: &Context,
 ) -> Option<u128> {
     let row = match db_tx
-        .query_opt("SELECT total_mints FROM runes WHERE id = $1", &[&id.to_string()])
+        .query_opt(
+            "SELECT total_mints FROM supply_changes WHERE rune_id = $1 ORDER BY block_height DESC LIMIT 1",
+            &[&id.to_string()],
+        )
         .await
     {
         Ok(row) => row,
         Err(e) => {
-            error!(
-                ctx.expect_logger(),
+            try_error!(
+                ctx,
                 "error retrieving rune minted total: {}",
                 e.to_string()
             );
@@ -409,8 +466,8 @@ pub async fn pg_get_missed_input_rune_balances(
     {
         Ok(rows) => rows,
         Err(e) => {
-            error!(
-                ctx.expect_logger(),
+            try_error!(
+                ctx,
                 "error retrieving output rune balances: {}",
                 e.to_string()
             );

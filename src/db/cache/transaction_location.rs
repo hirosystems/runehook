@@ -37,7 +37,8 @@ impl TransactionLocation {
     pub fn factory() -> Self {
         TransactionLocation {
             network: Network::Bitcoin,
-            block_hash: "0000000000000000000320283a032748cef8227873ff4872689bf23f1cda83a5".to_string(),
+            block_hash: "0000000000000000000320283a032748cef8227873ff4872689bf23f1cda83a5"
+                .to_string(),
             block_height: 840000,
             timestamp: 1713571767,
             tx_index: 0,

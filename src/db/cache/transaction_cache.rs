@@ -7,11 +7,11 @@ use bitcoin::{Address, Network, ScriptBuf};
 use chainhook_sdk::{types::bitcoin::TxOut, utils::Context};
 use ordinals::{Cenotaph, Edict, Etching, Rune, RuneId, Runestone};
 
-use crate::db::{
-    models::{
+use crate::{
+    db::models::{
         db_ledger_entry::DbLedgerEntry, db_ledger_operation::DbLedgerOperation, db_rune::DbRune,
     },
-    types::pg_numeric_u128::PgNumericU128,
+    try_debug, try_info, try_warn,
 };
 
 use super::transaction_location::TransactionLocation;
@@ -73,13 +73,18 @@ impl TransactionCache {
     pub fn set_input_rune_balances(
         &mut self,
         input_runes: HashMap<RuneId, VecDeque<InputRuneBalance>>,
-        ctx: &Context,
+        _ctx: &Context,
     ) {
+        #[cfg(feature = "debug")]
         for (rune_id, vec) in input_runes.iter() {
             for input in vec.iter() {
-                debug!(
-                    ctx.expect_logger(),
-                    "Input {} {:?} ({}) {}", rune_id, input.address, input.amount, self.location
+                try_debug!(
+                    _ctx,
+                    "Input {} {:?} ({}) {}",
+                    rune_id,
+                    input.address,
+                    input.amount,
+                    self.location
                 );
             }
         }
@@ -98,9 +103,11 @@ impl TransactionCache {
         let mut first_eligible_output: Option<u32> = None;
         for (i, output) in tx_outputs.iter().enumerate() {
             let Ok(bytes) = hex::decode(&output.script_pubkey[2..]) else {
-                warn!(
-                    ctx.expect_logger(),
-                    "Unable to decode script for output {} {}", i, self.location
+                try_warn!(
+                    ctx,
+                    "Unable to decode script for output {} {}",
+                    i,
+                    self.location
                 );
                 continue;
             };
@@ -113,9 +120,10 @@ impl TransactionCache {
             }
         }
         if first_eligible_output.is_none() {
-            warn!(
-                ctx.expect_logger(),
-                "No eligible non-OP_RETURN output found {}", self.location
+            try_info!(
+                ctx,
+                "No eligible non-OP_RETURN output found, all runes will be burnt {}",
+                self.location
             );
         }
         self.pointer = if runestone.pointer.is_some() {
@@ -153,9 +161,10 @@ impl TransactionCache {
     pub fn allocate_remaining_balances(&mut self, ctx: &Context) -> Vec<DbLedgerEntry> {
         let mut results = vec![];
         for (rune_id, unallocated) in self.input_runes.iter_mut() {
+            #[cfg(feature = "debug")]
             for input in unallocated.iter() {
-                debug!(
-                    ctx.expect_logger(),
+                try_debug!(
+                    ctx,
                     "Assign unallocated {} {:?} ({}) {}",
                     rune_id,
                     input.address,
@@ -239,16 +248,17 @@ impl TransactionCache {
         ctx: &Context,
     ) -> Option<DbLedgerEntry> {
         if !is_valid_mint(db_rune, total_mints, &self.location) {
-            debug!(
-                ctx.expect_logger(),
-                "Invalid mint {} {}", rune_id, self.location
-            );
+            try_debug!(ctx, "Invalid mint {} {}", rune_id, self.location);
             return None;
         }
         let terms_amount = db_rune.terms_amount.unwrap();
-        info!(
-            ctx.expect_logger(),
-            "MINT {} ({}) {} {}", rune_id, db_rune.spaced_name, terms_amount.0, self.location
+        try_info!(
+            ctx,
+            "MINT {} ({}) {} {}",
+            rune_id,
+            db_rune.spaced_name,
+            terms_amount.0,
+            self.location
         );
         self.add_input_runes(
             rune_id,
@@ -277,16 +287,16 @@ impl TransactionCache {
         ctx: &Context,
     ) -> Option<DbLedgerEntry> {
         if !is_valid_mint(db_rune, total_mints, &self.location) {
-            debug!(
-                ctx.expect_logger(),
-                "Invalid mint {} {}", rune_id, self.location
-            );
+            try_debug!(ctx, "Invalid mint {} {}", rune_id, self.location);
             return None;
         }
         let terms_amount = db_rune.terms_amount.unwrap();
-        info!(
-            ctx.expect_logger(),
-            "CENOTAPH MINT {} {} {}", db_rune.spaced_name, terms_amount.0, self.location
+        try_info!(
+            ctx,
+            "CENOTAPH MINT {} {} {}",
+            db_rune.spaced_name,
+            terms_amount.0,
+            self.location
         );
         // This entry does not go in the input runes, it gets burned immediately.
         Some(new_ledger_entry(
@@ -305,9 +315,10 @@ impl TransactionCache {
         // Find this rune.
         let rune_id = if edict.id.block == 0 && edict.id.tx == 0 {
             let Some(etching) = self.etching.as_ref() else {
-                warn!(
-                    ctx.expect_logger(),
-                    "Attempted edict for nonexistent rune 0:0 {}", self.location
+                try_warn!(
+                    ctx,
+                    "Attempted edict for nonexistent rune 0:0 {}",
+                    self.location
                 );
                 return vec![];
             };
@@ -317,9 +328,11 @@ impl TransactionCache {
         };
         // Take all the available inputs for the rune we're trying to move.
         let Some(available_inputs) = self.input_runes.get_mut(&rune_id) else {
-            warn!(
-                ctx.expect_logger(),
-                "No unallocated runes {} remain for edict {}", edict.id, self.location
+            try_info!(
+                ctx,
+                "No unallocated runes {} remain for edict {}",
+                edict.id,
+                self.location
             );
             return vec![];
         };
@@ -333,9 +346,11 @@ impl TransactionCache {
         let mut results = vec![];
         if self.eligible_outputs.len() == 0 {
             // No eligible outputs means burn.
-            warn!(
-                ctx.expect_logger(),
-                "No eligible outputs for edict on rune {} {}", edict.id, self.location
+            try_info!(
+                ctx,
+                "No eligible outputs for edict on rune {} {}",
+                edict.id,
+                self.location
             );
             results.extend(move_rune_balance_to_output(
                 &self.location,
@@ -413,9 +428,9 @@ impl TransactionCache {
                     ));
                 }
                 _ => {
-                    warn!(
-                        ctx.expect_logger(),
-                        "Edict for {} attempted move to nonexistent output {} {}",
+                    try_info!(
+                        ctx,
+                        "Edict for {} attempted move to nonexistent output {}, amount will be burnt {}",
                         edict.id,
                         edict.output,
                         self.location
@@ -529,17 +544,22 @@ fn move_rune_balance_to_output(
             Some(script) => match Address::from_script(script, location.network) {
                 Ok(address) => Some(address.to_string()),
                 Err(e) => {
-                    warn!(
-                        ctx.expect_logger(),
-                        "Unable to decode address for output {}, {} {}", output, e, location
+                    try_warn!(
+                        ctx,
+                        "Unable to decode address for output {}, {} {}",
+                        output,
+                        e,
+                        location
                     );
                     None
                 }
             },
             None => {
-                warn!(
-                    ctx.expect_logger(),
-                    "Attempted move to non-eligible output {} {}", output, location
+                try_info!(
+                    ctx,
+                    "Attempted move to non-eligible output {}, runes will be burnt {}",
+                    output,
+                    location
                 );
                 None
             }
@@ -595,8 +615,8 @@ fn move_rune_balance_to_output(
             DbLedgerOperation::Receive,
             next_event_index,
         ));
-        info!(
-            ctx.expect_logger(),
+        try_info!(
+            ctx,
             "{} {} ({}) {} {}",
             DbLedgerOperation::Receive,
             rune_id,
@@ -617,8 +637,8 @@ fn move_rune_balance_to_output(
             operation.clone(),
             next_event_index,
         ));
-        info!(
-            ctx.expect_logger(),
+        try_info!(
+            ctx,
             "{} {} ({}) {} -> {:?} {}",
             operation,
             rune_id,
@@ -650,12 +670,7 @@ mod test {
 
     #[test]
     fn receives_are_registered_first() {
-        let logger = hiro_system_kit::log::setup_logger();
-        let _guard = hiro_system_kit::log::setup_global_logger(logger.clone());
-        let ctx = Context {
-            logger: Some(logger),
-            tracer: false,
-        };
+        let ctx = Context::empty();
         let location = TransactionLocation {
             network: bitcoin::Network::Bitcoin,
             block_hash: "00000000000000000002c0cc73626b56fb3ee1ce605b0ce125cc4fb58775a0a9"
