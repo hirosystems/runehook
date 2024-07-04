@@ -3,7 +3,6 @@ use crate::config::Config;
 use crate::db::cache::index_cache::IndexCache;
 use crate::db::index::{index_block, roll_back_block};
 use crate::{try_error, try_info};
-use chainhook_sdk::bitcoin::block;
 use chainhook_sdk::chainhooks::bitcoin::{
     evaluate_bitcoin_chainhooks_on_chain_event, handle_bitcoin_hook_action,
     BitcoinChainhookOccurrence, BitcoinTriggerChainhook,
