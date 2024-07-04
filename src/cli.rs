@@ -1,3 +1,5 @@
+use std::{thread::sleep, time::Duration};
+
 use clap::{Parser, Subcommand};
 
 use chainhook_sdk::utils::{BlockHeights, Context};
@@ -7,6 +9,7 @@ use crate::{
     db::{cache::index_cache::IndexCache, pg_connect},
     scan::bitcoin::{drop_blocks, scan_blocks},
     service::start_service,
+    try_info,
 };
 
 #[derive(Parser, Debug)]
@@ -168,6 +171,11 @@ async fn handle_command(opts: Opts, ctx: Context) -> Result<(), String> {
         }
         Command::Service(ServiceCommand::Start(cmd)) => {
             let config = Config::from_file_path(&cmd.config_path)?;
+            let maintenance_enabled = std::env::var("MAINTENANCE_MODE").unwrap_or("0".into());
+            if maintenance_enabled.eq("1") {
+                try_info!(ctx, "Entering maintenance mode. Unset MAINTENANCE_MODE and reboot to resume operations.");
+                sleep(Duration::from_secs(u64::MAX))
+            }
             start_service(&config, &ctx).await?;
         }
         Command::Scan(ScanCommand::Start(cmd)) => {
