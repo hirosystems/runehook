@@ -351,7 +351,18 @@ impl IndexCache {
         self.db_cache.ledger_entries.extend(entries.clone());
         for entry in entries.iter() {
             match entry.operation {
-                DbLedgerOperation::Etching => {}
+                DbLedgerOperation::Etching => {
+                    self.db_cache
+                        .supply_changes
+                        .entry(entry.rune_id.clone())
+                        .and_modify(|i| {
+                            i.total_operations += 1;
+                        })
+                        .or_insert(DbSupplyChange::from_operation(
+                            entry.rune_id.clone(),
+                            entry.block_height.clone(),
+                        ));
+                }
                 DbLedgerOperation::Mint => {
                     self.db_cache
                         .supply_changes
