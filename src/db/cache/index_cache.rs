@@ -21,7 +21,7 @@ use crate::{
             db_ledger_operation::DbLedgerOperation, db_rune::DbRune,
             db_supply_change::DbSupplyChange,
         },
-        pg_get_max_rune_number, pg_get_missed_input_rune_balances, pg_get_rune_by_id,
+        pg_get_input_rune_balances, pg_get_max_rune_number, pg_get_rune_by_id,
         pg_get_rune_total_mints,
     },
     try_debug, try_info, try_warn,
@@ -320,10 +320,10 @@ impl IndexCache {
             }
         }
 
-        // Look for misses in database.
+        // Look for cache misses in database.
         if cache_misses.len() > 0 {
             // self.db_cache.flush(db_tx, ctx).await;
-            let output_balances = pg_get_missed_input_rune_balances(cache_misses, db_tx, ctx).await;
+            let output_balances = pg_get_input_rune_balances(cache_misses, db_tx, ctx).await;
             indexed_input_runes.extend(output_balances);
         }
 
