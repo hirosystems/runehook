@@ -12,7 +12,7 @@ use crate::{
         pg_insert_balance_changes, pg_insert_ledger_entries, pg_insert_runes,
         pg_insert_supply_changes,
     },
-    try_debug,
+    try_debug, try_info,
 };
 
 /// Holds rows that have yet to be inserted into the database.
@@ -37,6 +37,7 @@ impl DbCache {
 
     /// Insert all data into the DB and clear cache.
     pub async fn flush(&mut self, db_tx: &mut Transaction<'_>, ctx: &Context) {
+        try_info!(ctx, "Flushing DB cache...");
         if self.runes.len() > 0 {
             try_debug!(ctx, "Flushing {} runes", self.runes.len());
             let _ = pg_insert_runes(&self.runes, db_tx, ctx).await;

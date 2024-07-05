@@ -1,4 +1,4 @@
-use std::{collections::HashMap, str::FromStr};
+use std::{collections::HashMap, process, str::FromStr};
 
 use cache::transaction_cache::InputRuneBalance;
 use chainhook_sdk::utils::Context;
@@ -45,7 +45,8 @@ pub async fn pg_connect(config: &Config, run_migrations: bool, ctx: &Context) ->
             Ok((client, connection)) => {
                 tokio::spawn(async move {
                     if let Err(e) = connection.await {
-                        eprintln!("connection error: {}", e);
+                        eprintln!("Postgres connection error: {}", e.to_string());
+                        process::exit(1);
                     }
                 });
                 pg_client = client;
@@ -67,8 +68,8 @@ pub async fn pg_connect(config: &Config, run_migrations: bool, ctx: &Context) ->
         {
             Ok(_) => {}
             Err(e) => {
-                try_error!(ctx, "error running pg migrations: {}", e.to_string());
-                panic!()
+                try_error!(ctx, "Error running pg migrations: {}", e.to_string());
+                process::exit(1);
             }
         };
         try_info!(ctx, "Postgres migrations complete");
@@ -143,7 +144,7 @@ pub async fn pg_insert_runes(
             Ok(_) => {}
             Err(e) => {
                 try_error!(ctx, "Error inserting runes: {:?}", e);
-                panic!()
+                process::exit(1);
             }
         };
     }
@@ -155,50 +156,72 @@ pub async fn pg_insert_supply_changes(
     db_tx: &mut Transaction<'_>,
     ctx: &Context,
 ) -> Result<bool, Error> {
-    let stmt = db_tx
-        .prepare(
-            "WITH previous AS (
-                SELECT * FROM supply_changes
-                WHERE rune_id = $1 AND block_height <= $2
-                ORDER BY block_height DESC LIMIT 1
-            )
-            INSERT INTO supply_changes
-            (rune_id, block_height, minted, total_mints, burned, total_burns, total_operations)
-            VALUES ($1, $2,
-                COALESCE((SELECT minted FROM previous), 0) + $3,
-                COALESCE((SELECT total_mints FROM previous), 0) + $4,
-                COALESCE((SELECT burned FROM previous), 0) + $5,
-                COALESCE((SELECT total_burns FROM previous), 0) + $6,
-                COALESCE((SELECT total_operations FROM previous), 0) + $7)
-            ON CONFLICT (rune_id, block_height) DO UPDATE SET
-                minted = EXCLUDED.minted,
-                total_mints = EXCLUDED.total_mints,
-                burned = EXCLUDED.burned,
-                total_burns = EXCLUDED.total_burns,
-                total_operations = EXCLUDED.total_operations",
-        )
-        .await
-        .expect("Unable to prepare statement");
-    for row in rows.iter() {
+    for chunk in rows.chunks(500) {
+        let mut arg_num = 1;
+        let mut arg_str = String::new();
+        let mut params: Vec<&(dyn ToSql + Sync)> = vec![];
+        for row in chunk.iter() {
+            arg_str.push_str(
+                format!(
+                    "(${},${}::numeric,${}::numeric,${}::numeric,${}::numeric,${}::numeric,${}::numeric),",
+                    arg_num,
+                    arg_num + 1,
+                    arg_num + 2,
+                    arg_num + 3,
+                    arg_num + 4,
+                    arg_num + 5,
+                    arg_num + 6
+                )
+                .as_str(),
+            );
+            arg_num += 7;
+            params.push(&row.rune_id);
+            params.push(&row.block_height);
+            params.push(&row.minted);
+            params.push(&row.total_mints);
+            params.push(&row.burned);
+            params.push(&row.total_burns);
+            params.push(&row.total_operations);
+        }
+        arg_str.pop();
         match db_tx
-            .execute(
-                &stmt,
-                &[
-                    &row.rune_id,
-                    &row.block_height,
-                    &row.minted,
-                    &row.total_mints,
-                    &row.burned,
-                    &row.total_burns,
-                    &row.total_operations,
-                ],
+            .query(
+                &format!("
+                WITH changes (rune_id, block_height, minted, total_mints, burned, total_burns, total_operations) AS (VALUES {}),
+                previous AS (
+                    SELECT DISTINCT ON (rune_id) *
+                    FROM supply_changes
+                    WHERE rune_id IN (SELECT rune_id FROM changes)
+                    ORDER BY rune_id, block_height DESC
+                ),
+                inserts AS (
+                    SELECT c.rune_id,
+                        c.block_height,
+                        COALESCE(p.minted, 0) + c.minted AS minted,
+                        COALESCE(p.total_mints, 0) + c.total_mints AS total_mints,
+                        COALESCE(p.burned, 0) + c.burned AS burned,
+                        COALESCE(p.total_burns, 0) + c.total_burns AS total_burns,
+                        COALESCE(p.total_operations, 0) + c.total_operations AS total_operations
+                    FROM changes AS c
+                    LEFT JOIN previous AS p ON c.rune_id = p.rune_id
+                )
+                INSERT INTO supply_changes (rune_id, block_height, minted, total_mints, burned, total_burns, total_operations)
+                (SELECT * FROM inserts)
+                ON CONFLICT (rune_id, block_height) DO UPDATE SET
+                    minted = EXCLUDED.minted,
+                    total_mints = EXCLUDED.total_mints,
+                    burned = EXCLUDED.burned,
+                    total_burns = EXCLUDED.total_burns,
+                    total_operations = EXCLUDED.total_operations
+                ", arg_str),
+                &params,
             )
             .await
         {
             Ok(_) => {}
             Err(e) => {
-                try_error!(ctx, "Error updating rune supply: {:?} {:?}", e, row);
-                panic!()
+                try_error!(ctx, "Error inserting supply changes: {:?}", e);
+                process::exit(1);
             }
         };
     }
@@ -212,51 +235,58 @@ pub async fn pg_insert_balance_changes(
     ctx: &Context,
 ) -> Result<bool, Error> {
     let sign = if increase { "+" } else { "-" };
-    let stmt = db_tx
-        .prepare(
-            format!(
-                "WITH previous AS (
-                    SELECT * FROM balance_changes
-                    WHERE rune_id = $1 AND block_height <= $2 AND address = $3
-                    ORDER BY block_height DESC LIMIT 1
+    for chunk in rows.chunks(500) {
+        let mut arg_num = 1;
+        let mut arg_str = String::new();
+        let mut params: Vec<&(dyn ToSql + Sync)> = vec![];
+        for row in chunk.iter() {
+            arg_str.push_str(
+                format!(
+                    "(${},${}::numeric,${},${}::numeric,${}::bigint),",
+                    arg_num,
+                    arg_num + 1,
+                    arg_num + 2,
+                    arg_num + 3,
+                    arg_num + 4
+                )
+                .as_str(),
+            );
+            arg_num += 5;
+            params.push(&row.rune_id);
+            params.push(&row.block_height);
+            params.push(&row.address);
+            params.push(&row.balance);
+            params.push(&row.total_operations);
+        }
+        arg_str.pop();
+        match db_tx
+            .query(
+                &format!("WITH changes (rune_id, block_height, address, balance, total_operations) AS (VALUES {}),
+                previous AS (
+                    SELECT DISTINCT ON (rune_id, address) *
+                    FROM balance_changes
+                    WHERE (rune_id, address) IN (SELECT rune_id, address FROM changes)
+                    ORDER BY rune_id, address, block_height DESC
+                ),
+                inserts AS (
+                    SELECT c.rune_id, c.block_height, c.address, COALESCE(p.balance, 0) {} c.balance AS balance,
+                        COALESCE(p.total_operations, 0) + c.total_operations AS total_operations
+                    FROM changes AS c
+                    LEFT JOIN previous AS p ON c.rune_id = p.rune_id AND c.address = p.address
                 )
                 INSERT INTO balance_changes (rune_id, block_height, address, balance, total_operations)
-                VALUES ($1, $2, $3,
-                    COALESCE((SELECT balance FROM previous), 0) {} $4,
-                    COALESCE((SELECT total_operations FROM previous), 0) + $5)
+                (SELECT * FROM inserts)
                 ON CONFLICT (rune_id, block_height, address) DO UPDATE SET
                     balance = EXCLUDED.balance,
-                    total_operations = EXCLUDED.total_operations",
-                sign
-            )
-            .as_str(),
-        )
-        .await
-        .expect("Unable to prepare statement");
-    for row in rows.iter() {
-        match db_tx
-            .execute(
-                &stmt,
-                &[
-                    &row.rune_id,
-                    &row.block_height,
-                    &row.address,
-                    &row.balance,
-                    &row.total_operations,
-                ],
+                    total_operations = EXCLUDED.total_operations", arg_str, sign),
+                &params,
             )
             .await
         {
             Ok(_) => {}
             Err(e) => {
-                try_error!(
-                    ctx,
-                    "Error updating balance (increase={}): {:?} {:?}",
-                    increase,
-                    e,
-                    row
-                );
-                panic!()
+                try_error!(ctx, "Error inserting balance changes: {:?}", e);
+                process::exit(1);
             }
         };
     }
@@ -307,7 +337,7 @@ pub async fn pg_insert_ledger_entries(
             Ok(_) => {}
             Err(e) => {
                 try_error!(ctx, "Error inserting ledger entries: {:?}", e);
-                panic!()
+                process::exit(1);
             }
         };
     }
@@ -382,7 +412,7 @@ pub async fn pg_get_rune_by_id(
         Ok(row) => row,
         Err(e) => {
             try_error!(ctx, "error retrieving rune: {}", e.to_string());
-            panic!();
+            process::exit(1);
         }
     };
     let Some(row) = row else {
@@ -410,7 +440,7 @@ pub async fn pg_get_rune_total_mints(
                 "error retrieving rune minted total: {}",
                 e.to_string()
             );
-            panic!();
+            process::exit(1);
         }
     };
     let Some(row) = row else {
@@ -420,7 +450,10 @@ pub async fn pg_get_rune_total_mints(
     Some(minted.0)
 }
 
-pub async fn pg_get_missed_input_rune_balances(
+/// Retrieves the rune balance for an array of transaction inputs represented by `(vin, tx_id, vout)` where `vin` is the index of
+/// this transaction input, `tx_id` is the transaction ID that produced this input and `vout` is the output index of this previous
+/// tx.
+pub async fn pg_get_input_rune_balances(
     outputs: Vec<(u32, String, u32)>,
     db_tx: &mut Transaction<'_>,
     ctx: &Context,
@@ -471,7 +504,7 @@ pub async fn pg_get_missed_input_rune_balances(
                 "error retrieving output rune balances: {}",
                 e.to_string()
             );
-            panic!();
+            process::exit(1);
         }
     };
     let mut results: HashMap<u32, HashMap<RuneId, Vec<InputRuneBalance>>> = HashMap::new();
