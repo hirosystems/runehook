@@ -39,20 +39,8 @@ fn bitcoin_tx_from_chainhook_tx(
     Transaction {
         version: 2,
         lock_time: LockTime::from_time(block.timestamp).unwrap(),
-        input: tx
-            .metadata
-            .inputs
-            .iter()
-            .map(|input| TxIn {
-                previous_output: OutPoint {
-                    txid: Txid::from_str(&input.previous_output.txid.hash[2..]).unwrap(),
-                    vout: input.previous_output.vout,
-                },
-                script_sig: ScriptBuf::from_bytes(hex::decode(&input.script_sig[2..]).unwrap()),
-                sequence: Sequence(input.sequence),
-                witness: Witness::new(), // We don't need this for runes
-            })
-            .collect(),
+        // Inputs don't matter for Runestone parsing.
+        input: vec![],
         output: tx
             .metadata
             .outputs
