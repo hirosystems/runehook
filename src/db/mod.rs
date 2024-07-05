@@ -212,50 +212,57 @@ pub async fn pg_insert_balance_changes(
     ctx: &Context,
 ) -> Result<bool, Error> {
     let sign = if increase { "+" } else { "-" };
-    let stmt = db_tx
-        .prepare(
-            format!(
-                "WITH previous AS (
-                    SELECT * FROM balance_changes
-                    WHERE rune_id = $1 AND block_height <= $2 AND address = $3
-                    ORDER BY block_height DESC LIMIT 1
+    for chunk in rows.chunks(500) {
+        let mut arg_num = 1;
+        let mut arg_str = String::new();
+        let mut params: Vec<&(dyn ToSql + Sync)> = vec![];
+        for row in chunk.iter() {
+            arg_str.push_str(
+                format!(
+                    "(${},${}::numeric,${},${}::numeric,${}::bigint),",
+                    arg_num,
+                    arg_num + 1,
+                    arg_num + 2,
+                    arg_num + 3,
+                    arg_num + 4
+                )
+                .as_str(),
+            );
+            arg_num += 5;
+            params.push(&row.rune_id);
+            params.push(&row.block_height);
+            params.push(&row.address);
+            params.push(&row.balance);
+            params.push(&row.total_operations);
+        }
+        arg_str.pop();
+        match db_tx
+            .query(
+                &format!("WITH changes (rune_id, block_height, address, balance, total_operations) AS (VALUES {}),
+                previous AS (
+                    SELECT DISTINCT ON (rune_id, address) *
+                    FROM balance_changes
+                    WHERE (rune_id, address) IN (SELECT rune_id, address FROM changes)
+                    ORDER BY rune_id, address, block_height DESC
+                ),
+                inserts AS (
+                    SELECT c.rune_id, c.block_height, c.address, COALESCE(p.balance, 0) {} c.balance AS balance,
+                        COALESCE(p.total_operations, 0) + c.total_operations AS total_operations
+                    FROM changes AS c
+                    LEFT JOIN previous AS p ON c.rune_id = p.rune_id AND c.address = p.address
                 )
                 INSERT INTO balance_changes (rune_id, block_height, address, balance, total_operations)
-                VALUES ($1, $2, $3,
-                    COALESCE((SELECT balance FROM previous), 0) {} $4,
-                    COALESCE((SELECT total_operations FROM previous), 0) + $5)
+                (SELECT * FROM inserts)
                 ON CONFLICT (rune_id, block_height, address) DO UPDATE SET
                     balance = EXCLUDED.balance,
-                    total_operations = EXCLUDED.total_operations",
-                sign
-            )
-            .as_str(),
-        )
-        .await
-        .expect("Unable to prepare statement");
-    for row in rows.iter() {
-        match db_tx
-            .execute(
-                &stmt,
-                &[
-                    &row.rune_id,
-                    &row.block_height,
-                    &row.address,
-                    &row.balance,
-                    &row.total_operations,
-                ],
+                    total_operations = EXCLUDED.total_operations", arg_str, sign),
+                &params,
             )
             .await
         {
             Ok(_) => {}
             Err(e) => {
-                try_error!(
-                    ctx,
-                    "Error updating balance (increase={}): {:?} {:?}",
-                    increase,
-                    e,
-                    row
-                );
+                try_error!(ctx, "Error inserting balance changes: {:?}", e);
                 panic!()
             }
         };
