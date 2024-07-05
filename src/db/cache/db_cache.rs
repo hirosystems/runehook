@@ -37,7 +37,7 @@ impl DbCache {
 
     /// Insert all data into the DB and clear cache.
     pub async fn flush(&mut self, db_tx: &mut Transaction<'_>, ctx: &Context) {
-        try_info!(ctx, "Flushing cache");
+        try_info!(ctx, "Flushing DB cache...");
         if self.runes.len() > 0 {
             try_debug!(ctx, "Flushing {} runes", self.runes.len());
             let _ = pg_insert_runes(&self.runes, db_tx, ctx).await;
