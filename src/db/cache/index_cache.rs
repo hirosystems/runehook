@@ -322,7 +322,7 @@ impl IndexCache {
 
         // Look for cache misses in database.
         if cache_misses.len() > 0 {
-            self.db_cache.flush(db_tx, ctx).await;
+            // self.db_cache.flush(db_tx, ctx).await;
             let output_balances = pg_get_input_rune_balances(cache_misses, db_tx, ctx).await;
             indexed_input_runes.extend(output_balances);
         }
