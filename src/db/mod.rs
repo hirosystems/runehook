@@ -155,49 +155,71 @@ pub async fn pg_insert_supply_changes(
     db_tx: &mut Transaction<'_>,
     ctx: &Context,
 ) -> Result<bool, Error> {
-    let stmt = db_tx
-        .prepare(
-            "WITH previous AS (
-                SELECT * FROM supply_changes
-                WHERE rune_id = $1 AND block_height <= $2
-                ORDER BY block_height DESC LIMIT 1
-            )
-            INSERT INTO supply_changes
-            (rune_id, block_height, minted, total_mints, burned, total_burns, total_operations)
-            VALUES ($1, $2,
-                COALESCE((SELECT minted FROM previous), 0) + $3,
-                COALESCE((SELECT total_mints FROM previous), 0) + $4,
-                COALESCE((SELECT burned FROM previous), 0) + $5,
-                COALESCE((SELECT total_burns FROM previous), 0) + $6,
-                COALESCE((SELECT total_operations FROM previous), 0) + $7)
-            ON CONFLICT (rune_id, block_height) DO UPDATE SET
-                minted = EXCLUDED.minted,
-                total_mints = EXCLUDED.total_mints,
-                burned = EXCLUDED.burned,
-                total_burns = EXCLUDED.total_burns,
-                total_operations = EXCLUDED.total_operations",
-        )
-        .await
-        .expect("Unable to prepare statement");
-    for row in rows.iter() {
+    for chunk in rows.chunks(500) {
+        let mut arg_num = 1;
+        let mut arg_str = String::new();
+        let mut params: Vec<&(dyn ToSql + Sync)> = vec![];
+        for row in chunk.iter() {
+            arg_str.push_str(
+                format!(
+                    "(${},${}::numeric,${}::numeric,${}::numeric,${}::numeric,${}::numeric,${}::numeric),",
+                    arg_num,
+                    arg_num + 1,
+                    arg_num + 2,
+                    arg_num + 3,
+                    arg_num + 4,
+                    arg_num + 5,
+                    arg_num + 6
+                )
+                .as_str(),
+            );
+            arg_num += 7;
+            params.push(&row.rune_id);
+            params.push(&row.block_height);
+            params.push(&row.minted);
+            params.push(&row.total_mints);
+            params.push(&row.burned);
+            params.push(&row.total_burns);
+            params.push(&row.total_operations);
+        }
+        arg_str.pop();
         match db_tx
-            .execute(
-                &stmt,
-                &[
-                    &row.rune_id,
-                    &row.block_height,
-                    &row.minted,
-                    &row.total_mints,
-                    &row.burned,
-                    &row.total_burns,
-                    &row.total_operations,
-                ],
+            .query(
+                &format!("
+                WITH changes (rune_id, block_height, minted, total_mints, burned, total_burns, total_operations) AS (VALUES {}),
+                previous AS (
+                    SELECT DISTINCT ON (rune_id) *
+                    FROM supply_changes
+                    WHERE rune_id IN (SELECT rune_id FROM changes)
+                    ORDER BY rune_id, block_height DESC
+                ),
+                inserts AS (
+                    SELECT c.rune_id,
+                        c.block_height,
+                        COALESCE(p.minted, 0) + c.minted AS minted,
+                        COALESCE(p.total_mints, 0) + c.total_mints AS total_mints,
+                        COALESCE(p.burned, 0) + c.burned AS burned,
+                        COALESCE(p.total_burns, 0) + c.total_burns AS total_burns,
+                        COALESCE(p.total_operations, 0) + c.total_operations AS total_operations
+                    FROM changes AS c
+                    LEFT JOIN previous AS p ON c.rune_id = p.rune_id
+                )
+                INSERT INTO supply_changes (rune_id, block_height, minted, total_mints, burned, total_burns, total_operations)
+                (SELECT * FROM inserts)
+                ON CONFLICT (rune_id, block_height) DO UPDATE SET
+                    minted = EXCLUDED.minted,
+                    total_mints = EXCLUDED.total_mints,
+                    burned = EXCLUDED.burned,
+                    total_burns = EXCLUDED.total_burns,
+                    total_operations = EXCLUDED.total_operations
+                ", arg_str),
+                &params,
             )
             .await
         {
             Ok(_) => {}
             Err(e) => {
-                try_error!(ctx, "Error updating rune supply: {:?} {:?}", e, row);
+                try_error!(ctx, "Error inserting supply changes: {:?}", e);
                 panic!()
             }
         };
