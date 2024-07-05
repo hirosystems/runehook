@@ -1,3 +1,12 @@
+## [0.3.0-beta.2](https://github.com/hirosystems/runehook/compare/v0.3.0-beta.1...v0.3.0-beta.2) (2024-07-05)
+
+
+### Bug Fixes
+
+* cached output balance retrieval ([#16](https://github.com/hirosystems/runehook/issues/16)) ([b87b921](https://github.com/hirosystems/runehook/commit/b87b9212ec1e4addd394dc7af8e3e94c447d4487))
+* increase activity count when etching ([#14](https://github.com/hirosystems/runehook/issues/14)) ([e797fc3](https://github.com/hirosystems/runehook/commit/e797fc3bc023777ad38c9a5b1f9a0cd5672607c1))
+* open and close pg connections for each chainhook message ([#15](https://github.com/hirosystems/runehook/issues/15)) ([3c93671](https://github.com/hirosystems/runehook/commit/3c936719681b102cc0c2afa5e06b9ffb6d3672ce))
+
 ## [0.3.0-beta.1](https://github.com/hirosystems/runehook/compare/v0.2.2...v0.3.0-beta.1) (2024-07-04)
 
 
