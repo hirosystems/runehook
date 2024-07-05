@@ -1,15 +1,8 @@
-use std::str::FromStr;
-
 use bitcoin::absolute::LockTime;
 use bitcoin::transaction::TxOut;
 use bitcoin::Network;
-use bitcoin::OutPoint;
 use bitcoin::ScriptBuf;
-use bitcoin::Sequence;
 use bitcoin::Transaction;
-use bitcoin::TxIn;
-use bitcoin::Txid;
-use bitcoin::Witness;
 use chainhook_sdk::types::BitcoinTransactionData;
 use chainhook_sdk::{types::BitcoinBlockData, utils::Context};
 use ordinals::Artifact;

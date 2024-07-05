@@ -1,8 +1,4 @@
-use std::{
-    collections::{HashMap, VecDeque},
-    num::NonZeroUsize,
-    str::FromStr,
-};
+use std::{collections::HashMap, num::NonZeroUsize, str::FromStr};
 
 use bitcoin::Network;
 use chainhook_sdk::{
@@ -29,7 +25,8 @@ use crate::{
 
 use super::{
     db_cache::DbCache,
-    transaction_cache::{InputRuneBalance, TransactionCache}, utils::move_current_tx_output_cache_to_output_cache,
+    transaction_cache::{InputRuneBalance, TransactionCache},
+    utils::move_tx_output_cache_to_output_cache,
 };
 
 /// Holds rune data across multiple blocks for faster computations. Processes rune events as they happen during transactions and
@@ -46,7 +43,7 @@ pub struct IndexCache {
     output_cache: LruCache<(String, u32), HashMap<RuneId, Vec<InputRuneBalance>>>,
     /// Same as above but only for the current transaction. We use a `HashMap` instead of an LRU cache to make sure we keep all
     /// outputs in memory while we index this transaction. Must be cleared every time a new transaction is processed.
-    current_tx_output_cache: HashMap<(String, u32), HashMap<RuneId, Vec<InputRuneBalance>>>,
+    tx_output_cache: HashMap<(String, u32), HashMap<RuneId, Vec<InputRuneBalance>>>,
     /// Holds a single transaction's rune cache. Must be cleared every time a new transaction is processed.
     tx_cache: TransactionCache,
     /// Keeps rows that have not yet been inserted in the DB.
@@ -63,7 +60,7 @@ impl IndexCache {
             rune_cache: LruCache::new(cap),
             rune_total_mints_cache: LruCache::new(cap),
             output_cache: LruCache::new(cap),
-            current_tx_output_cache: HashMap::new(),
+            tx_output_cache: HashMap::new(),
             tx_cache: TransactionCache::new(network, &"".to_string(), 1, 0, &"".to_string(), 0),
             db_cache: DbCache::new(),
         }
@@ -90,13 +87,14 @@ impl IndexCache {
             tx_id,
             timestamp,
         );
+        self.tx_output_cache.clear();
     }
 
     /// Finalizes the current transaction index cache.
     pub fn end_transaction(&mut self, _db_tx: &mut Transaction<'_>, ctx: &Context) {
         let entries = self.tx_cache.allocate_remaining_balances(ctx);
         self.add_ledger_entries_to_db_cache(&entries);
-        move_current_tx_output_cache_to_output_cache(&mut self.current_tx_output_cache, &mut self.output_cache);
+        move_tx_output_cache_to_output_cache(&mut self.tx_output_cache, &mut self.output_cache);
     }
 
     pub async fn apply_runestone(
@@ -110,7 +108,7 @@ impl IndexCache {
         try_debug!(ctx, "{:?} {}", runestone, self.tx_cache.location);
         let input_balances = input_rune_balances_from_tx_inputs(
             tx_inputs,
-            &self.current_tx_output_cache,
+            &self.tx_output_cache,
             &mut self.output_cache,
             db_tx,
             ctx,
@@ -131,7 +129,7 @@ impl IndexCache {
         try_debug!(ctx, "{:?} {}", cenotaph, self.tx_cache.location);
         let input_balances = input_rune_balances_from_tx_inputs(
             tx_inputs,
-            &self.current_tx_output_cache,
+            &self.tx_output_cache,
             &mut self.output_cache,
             db_tx,
             ctx,
@@ -418,7 +416,7 @@ impl IndexCache {
                         };
                         let mut default = HashMap::new();
                         default.insert(rune_id, vec![balance.clone()]);
-                        self.current_tx_output_cache
+                        self.tx_output_cache
                             .entry(k)
                             .and_modify(|i| {
                                 i.entry(rune_id)
