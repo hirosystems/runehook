@@ -1,4 +1,4 @@
-use std::{collections::HashMap, str::FromStr};
+use std::{collections::HashMap, process, str::FromStr};
 
 use cache::transaction_cache::InputRuneBalance;
 use chainhook_sdk::utils::Context;
@@ -45,7 +45,8 @@ pub async fn pg_connect(config: &Config, run_migrations: bool, ctx: &Context) ->
             Ok((client, connection)) => {
                 tokio::spawn(async move {
                     if let Err(e) = connection.await {
-                        eprintln!("connection error: {}", e);
+                        eprintln!("Postgres connection error: {}", e.to_string());
+                        process::exit(1);
                     }
                 });
                 pg_client = client;
@@ -67,8 +68,8 @@ pub async fn pg_connect(config: &Config, run_migrations: bool, ctx: &Context) ->
         {
             Ok(_) => {}
             Err(e) => {
-                try_error!(ctx, "error running pg migrations: {}", e.to_string());
-                panic!()
+                try_error!(ctx, "Error running pg migrations: {}", e.to_string());
+                process::exit(1);
             }
         };
         try_info!(ctx, "Postgres migrations complete");
@@ -143,7 +144,7 @@ pub async fn pg_insert_runes(
             Ok(_) => {}
             Err(e) => {
                 try_error!(ctx, "Error inserting runes: {:?}", e);
-                panic!()
+                process::exit(1);
             }
         };
     }
@@ -220,7 +221,7 @@ pub async fn pg_insert_supply_changes(
             Ok(_) => {}
             Err(e) => {
                 try_error!(ctx, "Error inserting supply changes: {:?}", e);
-                panic!()
+                process::exit(1);
             }
         };
     }
@@ -285,7 +286,7 @@ pub async fn pg_insert_balance_changes(
             Ok(_) => {}
             Err(e) => {
                 try_error!(ctx, "Error inserting balance changes: {:?}", e);
-                panic!()
+                process::exit(1);
             }
         };
     }
@@ -336,7 +337,7 @@ pub async fn pg_insert_ledger_entries(
             Ok(_) => {}
             Err(e) => {
                 try_error!(ctx, "Error inserting ledger entries: {:?}", e);
-                panic!()
+                process::exit(1);
             }
         };
     }
@@ -411,7 +412,7 @@ pub async fn pg_get_rune_by_id(
         Ok(row) => row,
         Err(e) => {
             try_error!(ctx, "error retrieving rune: {}", e.to_string());
-            panic!();
+            process::exit(1);
         }
     };
     let Some(row) = row else {
@@ -439,7 +440,7 @@ pub async fn pg_get_rune_total_mints(
                 "error retrieving rune minted total: {}",
                 e.to_string()
             );
-            panic!();
+            process::exit(1);
         }
     };
     let Some(row) = row else {
@@ -449,7 +450,10 @@ pub async fn pg_get_rune_total_mints(
     Some(minted.0)
 }
 
-pub async fn pg_get_missed_input_rune_balances(
+/// Retrieves the rune balance for an array of transaction inputs represented by `(vin, tx_id, vout)` where `vin` is the index of
+/// this transaction input, `tx_id` is the transaction ID that produced this input and `vout` is the output index of this previous
+/// tx.
+pub async fn pg_get_input_rune_balances(
     outputs: Vec<(u32, String, u32)>,
     db_tx: &mut Transaction<'_>,
     ctx: &Context,
@@ -500,7 +504,7 @@ pub async fn pg_get_missed_input_rune_balances(
                 "error retrieving output rune balances: {}",
                 e.to_string()
             );
-            panic!();
+            process::exit(1);
         }
     };
     let mut results: HashMap<u32, HashMap<RuneId, Vec<InputRuneBalance>>> = HashMap::new();
