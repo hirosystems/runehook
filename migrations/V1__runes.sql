@@ -2,7 +2,7 @@ CREATE TABLE IF NOT EXISTS runes (
     id                      TEXT NOT NULL PRIMARY KEY,
     number                  BIGINT NOT NULL UNIQUE,
     name                    TEXT NOT NULL UNIQUE,
-    spaced_name             TEXT NOT NULL,
+    spaced_name             TEXT NOT NULL UNIQUE,
     block_hash              TEXT NOT NULL,
     block_height            NUMERIC NOT NULL,
     tx_index                BIGINT NOT NULL,
