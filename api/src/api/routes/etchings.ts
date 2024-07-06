@@ -88,7 +88,7 @@ export const EtchingRoutes: FastifyPluginCallback<
         operationId: 'getRuneActivity',
         summary: 'Rune activity',
         description: 'Retrieves all activity for a Rune',
-        tags: ['Activities'],
+        tags: ['Activity'],
         params: Type.Object({
           etching: RuneSchema,
         }),
@@ -121,7 +121,7 @@ export const EtchingRoutes: FastifyPluginCallback<
         operationId: 'getRuneAddressActivity',
         summary: 'Rune activity for address',
         description: 'Retrieves all activity for a Rune address',
-        tags: ['Activities'],
+        tags: ['Activity'],
         params: Type.Object({
           etching: RuneSchema,
           address: AddressSchema,
