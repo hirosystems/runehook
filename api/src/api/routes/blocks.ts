@@ -21,7 +21,7 @@ export const BlockRoutes: FastifyPluginCallback<
         operationId: 'getBlockActivity',
         summary: 'Block activity',
         description: 'Retrieves a paginated list of rune activity for a block',
-        tags: ['Activities'],
+        tags: ['Activity'],
         params: Type.Object({
           block: BlockSchema,
         }),
