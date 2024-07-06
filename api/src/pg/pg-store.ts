@@ -140,9 +140,11 @@ export class PgStore extends BasePgStore {
     filter: PgSqlQuery,
     count: PgSqlQuery,
     offset: Offset,
-    limit: Limit
+    limit: Limit,
+    cte?: PgSqlQuery
   ): Promise<DbPaginatedResult<DbItemWithRune<DbLedgerEntry>>> {
     const results = await this.sql<DbCountedQueryResult<DbItemWithRune<DbLedgerEntry>>[]>`
+      ${cte ? cte : this.sql``}
       SELECT l.*, r.name, r.spaced_name, r.divisibility, ${count} AS total
       FROM ledger AS l
       INNER JOIN runes AS r ON r.id = l.rune_id
@@ -159,9 +161,14 @@ export class PgStore extends BasePgStore {
   async getRuneActivity(runeId: Rune, offset: Offset, limit: Limit) {
     return this.getActivity(
       runeFilter(this.sql, runeId, 'r'),
-      this.sql`r.total_operations`,
+      this.sql`COALESCE((SELECT total_operations FROM count), 0)`,
       offset,
-      limit
+      limit,
+      this.sql`WITH count AS (
+        SELECT total_operations FROM supply_changes
+        WHERE rune_id = (SELECT id FROM runes WHERE ${runeFilter(this.sql, runeId)})
+        ORDER BY block_height DESC LIMIT 1
+      )`
     );
   }
 
@@ -177,9 +184,18 @@ export class PgStore extends BasePgStore {
   async getAddressActivity(address: Address, offset: Offset, limit: Limit) {
     return this.getActivity(
       this.sql`address = ${address}`,
-      this.sql`COUNT(*) OVER()`,
+      this.sql`COALESCE((SELECT total_operations FROM count), 0)`,
       offset,
-      limit
+      limit,
+      this.sql`WITH recent AS (
+        SELECT DISTINCT ON (rune_id) total_operations
+        FROM balance_changes
+        WHERE address = ${address}
+        ORDER BY rune_id, block_height DESC
+      ),
+      count AS (
+        SELECT SUM(total_operations) AS total_operations FROM recent
+      )`
     );
   }
 

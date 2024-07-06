@@ -9,7 +9,7 @@ import {
   BalanceResponseSchema,
   ActivityResponseSchema,
 } from '../schemas';
-import { parseBalanceResponse } from '../util/helpers';
+import { parseActivityResponse, parseBalanceResponse } from '../util/helpers';
 import { Optional, PaginatedResponse } from '@hirosystems/api-toolkit';
 import { handleCache } from '../util/cache';
 
@@ -74,7 +74,15 @@ export const AddressRoutes: FastifyPluginCallback<
       },
     },
     async (request, reply) => {
-      //
+      const offset = request.query.offset ?? 0;
+      const limit = request.query.limit ?? 20;
+      const results = await fastify.db.getAddressActivity(request.params.address, offset, limit);
+      await reply.send({
+        limit,
+        offset,
+        total: results.total,
+        results: results.results.map(r => parseActivityResponse(r)),
+      });
     }
   );
 
