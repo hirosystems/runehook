@@ -1,3 +1,10 @@
+## [0.3.0-beta.3](https://github.com/hirosystems/runehook/compare/v0.3.0-beta.2...v0.3.0-beta.3) (2024-07-06)
+
+
+### Features
+
+* address activity endpoint ([#18](https://github.com/hirosystems/runehook/issues/18)) ([c6b8bbe](https://github.com/hirosystems/runehook/commit/c6b8bbe683d1433a44147a474c389d9380959c23))
+
 ## [0.3.0-beta.2](https://github.com/hirosystems/runehook/compare/v0.3.0-beta.1...v0.3.0-beta.2) (2024-07-05)
 
 
