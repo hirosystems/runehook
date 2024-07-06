@@ -174,6 +174,15 @@ export class PgStore extends BasePgStore {
     );
   }
 
+  async getAddressActivity(address: Address, offset: Offset, limit: Limit) {
+    return this.getActivity(
+      this.sql`address = ${address}`,
+      this.sql`COUNT(*) OVER()`,
+      offset,
+      limit
+    );
+  }
+
   async getTransactionActivity(txId: TransactionId, offset: Offset, limit: Limit) {
     return this.getActivity(this.sql`l.tx_id = ${txId}`, this.sql`COUNT(*) OVER()`, offset, limit);
   }

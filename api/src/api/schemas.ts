@@ -26,8 +26,8 @@ export const OpenApiSchemaOptions: SwaggerOptions = {
         description: 'Rune etchings',
       },
       {
-        name: 'Activities',
-        description: 'Rune activities',
+        name: 'Activity',
+        description: 'Rune activity',
       },
       {
         name: 'Balances',
