@@ -3,14 +3,17 @@ use std::{
     vec,
 };
 
-use bitcoin::{Network, ScriptBuf};
-use chainhook_sdk::{types::bitcoin::TxOut, utils::Context};
+use bitcoin::ScriptBuf;
+use chainhook_sdk::utils::Context;
 use ordinals::{Cenotaph, Edict, Etching, Rune, RuneId, Runestone};
 
 use crate::{
-    db::{cache::utils::{is_rune_mintable, new_ledger_entry}, models::{
-        db_ledger_entry::DbLedgerEntry, db_ledger_operation::DbLedgerOperation, db_rune::DbRune,
-    }},
+    db::{
+        cache::utils::{is_rune_mintable, new_ledger_entry},
+        models::{
+            db_ledger_entry::DbLedgerEntry, db_ledger_operation::DbLedgerOperation, db_rune::DbRune,
+        },
+    },
     try_debug, try_info, try_warn,
 };
 
@@ -38,98 +41,38 @@ pub struct TransactionCache {
     input_runes: HashMap<RuneId, VecDeque<InputRuneBalance>>,
     /// Non-OP_RETURN outputs in this transaction
     eligible_outputs: HashMap<u32, ScriptBuf>,
+    /// Index of the output that should receive unallocated runes if there is no `pointer` present.
+    first_eligible_output: Option<u32>,
     /// Total outputs contained in this transaction, including OP_RETURN outputs
     total_outputs: u32,
 }
 
 impl TransactionCache {
     pub fn new(
-        network: Network,
-        block_hash: &String,
-        block_height: u64,
-        tx_index: u32,
-        tx_id: &String,
-        timestamp: u32,
+        location: TransactionLocation,
+        input_runes: HashMap<RuneId, VecDeque<InputRuneBalance>>,
+        eligible_outputs: HashMap<u32, ScriptBuf>,
+        first_eligible_output: Option<u32>,
+        total_outputs: u32,
     ) -> Self {
         TransactionCache {
-            location: TransactionLocation {
-                network,
-                block_hash: block_hash.clone(),
-                block_height,
-                tx_id: tx_id.clone(),
-                tx_index,
-                timestamp,
-            },
+            location,
             next_event_index: 0,
             etching: None,
             pointer: None,
-            input_runes: HashMap::new(),
-            eligible_outputs: HashMap::new(),
-            total_outputs: 0,
+            input_runes,
+            eligible_outputs,
+            first_eligible_output,
+            total_outputs,
         }
-    }
-
-    /// Takes this transaction's input runes and moves them to the unallocated balance for future edict allocation.
-    pub fn set_input_rune_balances(
-        &mut self,
-        input_runes: HashMap<RuneId, VecDeque<InputRuneBalance>>,
-        _ctx: &Context,
-    ) {
-        #[cfg(feature = "debug")]
-        for (rune_id, vec) in input_runes.iter() {
-            for input in vec.iter() {
-                try_debug!(
-                    _ctx,
-                    "Input {} {:?} ({}) {}",
-                    rune_id,
-                    input.address,
-                    input.amount,
-                    self.location
-                );
-            }
-        }
-        self.input_runes = input_runes;
     }
 
     /// Takes the runestone's output pointer and keeps a record of eligible outputs to send runes to.
-    pub fn apply_runestone_pointer(
-        &mut self,
-        runestone: &Runestone,
-        tx_outputs: &Vec<TxOut>,
-        ctx: &Context,
-    ) {
-        self.total_outputs = tx_outputs.len() as u32;
-        // Keep a record of non-OP_RETURN outputs.
-        let mut first_eligible_output: Option<u32> = None;
-        for (i, output) in tx_outputs.iter().enumerate() {
-            let Ok(bytes) = hex::decode(&output.script_pubkey[2..]) else {
-                try_warn!(
-                    ctx,
-                    "Unable to decode script for output {} {}",
-                    i,
-                    self.location
-                );
-                continue;
-            };
-            let script = ScriptBuf::from_bytes(bytes);
-            if !script.is_op_return() {
-                if first_eligible_output.is_none() {
-                    first_eligible_output = Some(i as u32);
-                }
-                self.eligible_outputs.insert(i as u32, script);
-            }
-        }
-        if first_eligible_output.is_none() {
-            try_info!(
-                ctx,
-                "No eligible non-OP_RETURN output found, all runes will be burnt {}",
-                self.location
-            );
-        }
+    pub fn apply_runestone_pointer(&mut self, runestone: &Runestone, _ctx: &Context) {
         self.pointer = if runestone.pointer.is_some() {
             runestone.pointer
-        } else if first_eligible_output.is_some() {
-            first_eligible_output
+        } else if self.first_eligible_output.is_some() {
+            self.first_eligible_output
         } else {
             None
         };

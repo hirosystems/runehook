@@ -8,7 +8,9 @@ use tokio_postgres::Transaction;
 
 use crate::{
     db::{
-        models::{db_ledger_entry::DbLedgerEntry, db_ledger_operation::DbLedgerOperation, db_rune::DbRune},
+        models::{
+            db_ledger_entry::DbLedgerEntry, db_ledger_operation::DbLedgerOperation, db_rune::DbRune,
+        },
         pg_get_input_rune_balances,
     },
     try_info, try_warn,
@@ -20,7 +22,7 @@ use super::{transaction_cache::InputRuneBalance, transaction_location::Transacti
 /// cache and the DB when there are cache misses.
 pub async fn input_rune_balances_from_tx_inputs(
     tx_inputs: &Vec<TxIn>,
-    tx_output_cache: &HashMap<(String, u32), HashMap<RuneId, Vec<InputRuneBalance>>>,
+    block_output_cache: &HashMap<(String, u32), HashMap<RuneId, Vec<InputRuneBalance>>>,
     output_cache: &mut LruCache<(String, u32), HashMap<RuneId, Vec<InputRuneBalance>>>,
     db_tx: &mut Transaction<'_>,
     ctx: &Context,
@@ -29,12 +31,12 @@ pub async fn input_rune_balances_from_tx_inputs(
     let mut indexed_input_runes = HashMap::new();
     let mut cache_misses = vec![];
 
-    // Look in both current transaction output cache and in long term LRU cache.
+    // Look in both current block output cache and in long term LRU cache.
     for (i, input) in tx_inputs.iter().enumerate() {
         let tx_id = input.previous_output.txid.hash[2..].to_string();
         let vout = input.previous_output.vout;
         let k = (tx_id.clone(), vout);
-        if let Some(map) = tx_output_cache.get(&k) {
+        if let Some(map) = block_output_cache.get(&k) {
             indexed_input_runes.insert(i as u32, map.clone());
         } else if let Some(map) = output_cache.get(&k) {
             indexed_input_runes.insert(i as u32, map.clone());
@@ -43,7 +45,7 @@ pub async fn input_rune_balances_from_tx_inputs(
         }
     }
     // Look for cache misses in database. We don't need to `flush` the DB cache here because we've already looked in the current
-    // transaction's output cache.
+    // block's output cache.
     if cache_misses.len() > 0 {
         let output_balances = pg_get_input_rune_balances(cache_misses, db_tx, ctx).await;
         indexed_input_runes.extend(output_balances);
@@ -65,15 +67,14 @@ pub async fn input_rune_balances_from_tx_inputs(
     final_input_runes
 }
 
-/// Moves data from the current transaction's output cache to the long-term LRU output cache. Clears the tx output cache when
-/// done.
-pub fn move_tx_output_cache_to_output_cache(
-    tx_output_cache: &mut HashMap<(String, u32), HashMap<RuneId, Vec<InputRuneBalance>>>,
+/// Moves data from the current block's output cache to the long-term LRU output cache. Clears the block output cache when done.
+pub fn move_block_output_cache_to_output_cache(
+    block_output_cache: &mut HashMap<(String, u32), HashMap<RuneId, Vec<InputRuneBalance>>>,
     output_cache: &mut LruCache<(String, u32), HashMap<RuneId, Vec<InputRuneBalance>>>,
 ) {
-    for (k, tx_output_map) in tx_output_cache.iter() {
+    for (k, block_output_map) in block_output_cache.iter() {
         if let Some(v) = output_cache.get_mut(&k) {
-            for (rune_id, balances) in tx_output_map.iter() {
+            for (rune_id, balances) in block_output_map.iter() {
                 if let Some(rune_balance) = v.get_mut(&rune_id) {
                     rune_balance.extend(balances.clone());
                 } else {
@@ -81,10 +82,10 @@ pub fn move_tx_output_cache_to_output_cache(
                 }
             }
         } else {
-            output_cache.push(k.clone(), tx_output_map.clone());
+            output_cache.push(k.clone(), block_output_map.clone());
         }
     }
-    tx_output_cache.clear();
+    block_output_cache.clear();
 }
 
 /// Creates a new ledger entry.
@@ -247,7 +248,11 @@ pub fn move_rune_balance_to_output(
 }
 
 /// Determines if a mint is valid depending on the rune's mint terms.
-pub fn is_rune_mintable(db_rune: &DbRune, total_mints: u128, location: &TransactionLocation) -> bool {
+pub fn is_rune_mintable(
+    db_rune: &DbRune,
+    total_mints: u128,
+    location: &TransactionLocation,
+) -> bool {
     if db_rune.terms_amount.is_none() {
         return false;
     }
@@ -293,7 +298,8 @@ mod test {
             transaction_cache::InputRuneBalance, transaction_location::TransactionLocation,
             utils::move_rune_balance_to_output,
         },
-        models::{db_ledger_operation::DbLedgerOperation, db_rune::DbRune}, types::{pg_numeric_u128::PgNumericU128, pg_numeric_u64::PgNumericU64},
+        models::{db_ledger_operation::DbLedgerOperation, db_rune::DbRune},
+        types::{pg_numeric_u128::PgNumericU128, pg_numeric_u64::PgNumericU64},
     };
 
     use super::is_rune_mintable;
