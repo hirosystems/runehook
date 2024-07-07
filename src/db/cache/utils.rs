@@ -8,7 +8,9 @@ use tokio_postgres::Transaction;
 
 use crate::{
     db::{
-        models::{db_ledger_entry::DbLedgerEntry, db_ledger_operation::DbLedgerOperation, db_rune::DbRune},
+        models::{
+            db_ledger_entry::DbLedgerEntry, db_ledger_operation::DbLedgerOperation, db_rune::DbRune,
+        },
         pg_get_input_rune_balances,
     },
     try_info, try_warn,
@@ -247,7 +249,11 @@ pub fn move_rune_balance_to_output(
 }
 
 /// Determines if a mint is valid depending on the rune's mint terms.
-pub fn is_rune_mintable(db_rune: &DbRune, total_mints: u128, location: &TransactionLocation) -> bool {
+pub fn is_rune_mintable(
+    db_rune: &DbRune,
+    total_mints: u128,
+    location: &TransactionLocation,
+) -> bool {
     if db_rune.terms_amount.is_none() {
         return false;
     }
@@ -293,7 +299,8 @@ mod test {
             transaction_cache::InputRuneBalance, transaction_location::TransactionLocation,
             utils::move_rune_balance_to_output,
         },
-        models::{db_ledger_operation::DbLedgerOperation, db_rune::DbRune}, types::{pg_numeric_u128::PgNumericU128, pg_numeric_u64::PgNumericU64},
+        models::{db_ledger_operation::DbLedgerOperation, db_rune::DbRune},
+        types::{pg_numeric_u128::PgNumericU128, pg_numeric_u64::PgNumericU64},
     };
 
     use super::is_rune_mintable;
