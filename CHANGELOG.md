@@ -1,3 +1,12 @@
+## [0.3.0-beta.4](https://github.com/hirosystems/runehook/compare/v0.3.0-beta.3...v0.3.0-beta.4) (2024-07-08)
+
+
+### Bug Fixes
+
+* default output selection without a runestone ([#23](https://github.com/hirosystems/runehook/issues/23)) ([016583c](https://github.com/hirosystems/runehook/commit/016583c69d559ff6eaa4ae525be06ada9cd6a146))
+* move unallocated without need for a runestone ([#22](https://github.com/hirosystems/runehook/issues/22)) ([69559e0](https://github.com/hirosystems/runehook/commit/69559e0b70f49197f0ae645820960e4cfd8852e2))
+* register receive operations correctly on edicts ([#21](https://github.com/hirosystems/runehook/issues/21)) ([de48a59](https://github.com/hirosystems/runehook/commit/de48a593426c422d5554f7bbd99b133baaca5ae3))
+
 ## [0.3.0-beta.3](https://github.com/hirosystems/runehook/compare/v0.3.0-beta.2...v0.3.0-beta.3) (2024-07-06)
 
 
