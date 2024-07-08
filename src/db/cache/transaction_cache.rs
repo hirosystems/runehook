@@ -5,7 +5,7 @@ use std::{
 
 use bitcoin::ScriptBuf;
 use chainhook_sdk::utils::Context;
-use ordinals::{Cenotaph, Edict, Etching, Rune, RuneId, Runestone};
+use ordinals::{Cenotaph, Edict, Etching, Rune, RuneId};
 
 use crate::{
     db::{
@@ -30,20 +30,20 @@ pub struct InputRuneBalance {
 /// Holds cached data relevant to a single transaction during indexing.
 pub struct TransactionCache {
     pub location: TransactionLocation,
-    /// Index of the ledger entry we're inserting next for this transaction.
+    /// Sequential index of the ledger entry we're inserting next for this transaction. Will be increased with each generated
+    /// entry.
     next_event_index: u32,
-    /// Rune etched during this transaction
+    /// Rune etched during this transaction, if any.
     pub etching: Option<DbRune>,
-    /// The output where all unallocated runes will be transferred to.
-    pointer: Option<u32>,
+    /// The output where all unallocated runes will be transferred to. Set to the first eligible output by default but can be
+    /// overridden by a Runestone.
+    pub output_pointer: Option<u32>,
     /// Holds input runes for the current transaction (input to this tx, premined or minted). Balances in the vector are in the
     /// order in which they were input to this transaction.
     input_runes: HashMap<RuneId, VecDeque<InputRuneBalance>>,
     /// Non-OP_RETURN outputs in this transaction
     eligible_outputs: HashMap<u32, ScriptBuf>,
-    /// Index of the output that should receive unallocated runes if there is no `pointer` present.
-    first_eligible_output: Option<u32>,
-    /// Total outputs contained in this transaction, including OP_RETURN outputs
+    /// Total outputs contained in this transaction, including non-eligible outputs.
     total_outputs: u32,
 }
 
@@ -59,23 +59,11 @@ impl TransactionCache {
             location,
             next_event_index: 0,
             etching: None,
-            pointer: None,
+            output_pointer: first_eligible_output,
             input_runes,
             eligible_outputs,
-            first_eligible_output,
             total_outputs,
         }
-    }
-
-    /// Takes the runestone's output pointer and keeps a record of eligible outputs to send runes to.
-    pub fn apply_runestone_pointer(&mut self, runestone: &Runestone, _ctx: &Context) {
-        self.pointer = if runestone.pointer.is_some() {
-            runestone.pointer
-        } else if self.first_eligible_output.is_some() {
-            self.first_eligible_output
-        } else {
-            None
-        };
     }
 
     /// Burns the rune balances input to this transaction.
@@ -104,12 +92,13 @@ impl TransactionCache {
     pub fn allocate_remaining_balances(&mut self, ctx: &Context) -> Vec<DbLedgerEntry> {
         let mut results = vec![];
         for (rune_id, unallocated) in self.input_runes.iter_mut() {
-            #[cfg(feature = "debug")]
+            #[cfg(not(feature = "release"))]
             for input in unallocated.iter() {
                 try_debug!(
                     ctx,
-                    "Assign unallocated {} {:?} ({}) {}",
+                    "Assign unallocated {} to pointer {:?} {:?} ({}) {}",
                     rune_id,
+                    self.output_pointer,
                     input.address,
                     input.amount,
                     self.location
@@ -117,7 +106,7 @@ impl TransactionCache {
             }
             results.extend(move_rune_balance_to_output(
                 &self.location,
-                self.pointer,
+                self.output_pointer,
                 rune_id,
                 unallocated,
                 &self.eligible_outputs,

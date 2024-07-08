@@ -100,6 +100,15 @@ impl IndexCache {
             ctx,
         )
         .await;
+        #[cfg(not(feature = "release"))]
+        {
+            for (rune_id, balances) in input_runes.iter() {
+                try_debug!(ctx, "INPUT {rune_id} {balances:?} {location}");
+            }
+            if input_runes.len() > 0 {
+                try_debug!(ctx, "First output: {first_eligible_output:?}, total_outputs: {total_outputs}");
+            }
+        }
         self.tx_cache = TransactionCache::new(
             location,
             input_runes,
@@ -126,7 +135,9 @@ impl IndexCache {
         ctx: &Context,
     ) {
         try_debug!(ctx, "{:?} {}", runestone, self.tx_cache.location);
-        self.tx_cache.apply_runestone_pointer(runestone, ctx);
+        if let Some(new_pointer) = runestone.pointer {
+            self.tx_cache.output_pointer = Some(new_pointer);
+        }
     }
 
     pub async fn apply_cenotaph(

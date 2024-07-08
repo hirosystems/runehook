@@ -27,8 +27,8 @@ pub fn get_rune_genesis_block_height(network: Network) -> u64 {
     }
 }
 
-/// Transforms a Bitcoin transaction from a Chainhook format to a rust bitcoin format so it can be consumed by ord. Also, takes
-/// all non-OP_RETURN outputs and returns them so they can be used later to receive runes.
+/// Transforms a Bitcoin transaction from a Chainhook format to a rust bitcoin crate format so it can be parsed by the ord crate
+/// to look for `Artifact`s. Also, takes all non-OP_RETURN outputs and returns them so they can be used later to receive runes.
 fn bitcoin_tx_from_chainhook_tx(
     block: &BitcoinBlockData,
     tx: &BitcoinTransactionData,
