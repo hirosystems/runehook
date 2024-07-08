@@ -17,15 +17,10 @@ use crate::{
     try_debug, try_info, try_warn,
 };
 
-use super::{transaction_location::TransactionLocation, utils::move_rune_balance_to_output};
-
-#[derive(Debug, Clone)]
-pub struct InputRuneBalance {
-    /// Previous owner of this balance. If this is `None`, it means the balance was just minted or premined.
-    pub address: Option<String>,
-    /// How much balance was input to this transaction.
-    pub amount: u128,
-}
+use super::{
+    input_rune_balance::InputRuneBalance, transaction_location::TransactionLocation,
+    utils::move_rune_balance_to_output,
+};
 
 /// Holds cached data relevant to a single transaction during indexing.
 pub struct TransactionCache {

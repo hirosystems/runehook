@@ -21,10 +21,8 @@ use crate::{
 };
 
 use super::{
-    db_cache::DbCache,
-    transaction_cache::{InputRuneBalance, TransactionCache},
-    transaction_location::TransactionLocation,
-    utils::move_block_output_cache_to_output_cache,
+    db_cache::DbCache, input_rune_balance::InputRuneBalance, transaction_cache::TransactionCache,
+    transaction_location::TransactionLocation, utils::move_block_output_cache_to_output_cache,
 };
 
 /// Holds rune data across multiple blocks for faster computations. Processes rune events as they happen during transactions and
@@ -106,7 +104,10 @@ impl IndexCache {
                 try_debug!(ctx, "INPUT {rune_id} {balances:?} {location}");
             }
             if input_runes.len() > 0 {
-                try_debug!(ctx, "First output: {first_eligible_output:?}, total_outputs: {total_outputs}");
+                try_debug!(
+                    ctx,
+                    "First output: {first_eligible_output:?}, total_outputs: {total_outputs}"
+                );
             }
         }
         self.tx_cache = TransactionCache::new(
@@ -125,7 +126,10 @@ impl IndexCache {
     }
 
     pub fn end_block(&mut self) {
-        move_block_output_cache_to_output_cache(&mut self.block_output_cache, &mut self.output_cache);
+        move_block_output_cache_to_output_cache(
+            &mut self.block_output_cache,
+            &mut self.output_cache,
+        );
     }
 
     pub async fn apply_runestone(
