@@ -249,6 +249,13 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Checkout tag
+        if: needs.semantic-release.outputs.new_release_version != ''
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: v${{ needs.semantic-release.outputs.new_release_version }}
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
