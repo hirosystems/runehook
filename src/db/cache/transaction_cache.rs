@@ -9,7 +9,7 @@ use ordinals::{Cenotaph, Edict, Etching, Rune, RuneId};
 
 use crate::{
     db::{
-        cache::utils::{is_rune_mintable, new_ledger_entry},
+        cache::utils::{is_rune_mintable, new_sequential_ledger_entry},
         models::{
             db_ledger_entry::DbLedgerEntry, db_ledger_operation::DbLedgerOperation, db_rune::DbRune,
         },
@@ -66,7 +66,7 @@ impl TransactionCache {
         let mut results = vec![];
         for (rune_id, unallocated) in self.input_runes.iter() {
             for balance in unallocated {
-                results.push(new_ledger_entry(
+                results.push(new_sequential_ledger_entry(
                     &self.location,
                     Some(balance.amount),
                     *rune_id,
@@ -132,7 +132,7 @@ impl TransactionCache {
                 },
             );
         }
-        let entry = new_ledger_entry(
+        let entry = new_sequential_ledger_entry(
             &self.location,
             None,
             rune_id,
@@ -154,7 +154,7 @@ impl TransactionCache {
         // If the runestone that produced the cenotaph contained an etching, the etched rune has supply zero and is unmintable.
         let db_rune = DbRune::from_cenotaph_etching(rune, number, &self.location);
         self.etching = Some(db_rune.clone());
-        let entry = new_ledger_entry(
+        let entry = new_sequential_ledger_entry(
             &self.location,
             None,
             rune_id,
@@ -194,7 +194,7 @@ impl TransactionCache {
                 amount: terms_amount.0,
             },
         );
-        Some(new_ledger_entry(
+        Some(new_sequential_ledger_entry(
             &self.location,
             Some(terms_amount.0),
             rune_id.clone(),
@@ -226,7 +226,7 @@ impl TransactionCache {
             self.location
         );
         // This entry does not go in the input runes, it gets burned immediately.
-        Some(new_ledger_entry(
+        Some(new_sequential_ledger_entry(
             &self.location,
             Some(terms_amount.0),
             rune_id.clone(),
