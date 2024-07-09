@@ -301,6 +301,18 @@ mod test {
             models::db_ledger_operation::DbLedgerOperation,
         };
 
+        fn dummy_eligible_output() -> HashMap<u32, ScriptBuf> {
+            let mut eligible_outputs = HashMap::new();
+            eligible_outputs.insert(
+                0u32,
+                ScriptBuf::from_hex(
+                    "5120388dfba1b0069bbb0ad5eef62c1a94c46e91a3454accf40bf34b80f75e2708db",
+                )
+                .unwrap(),
+            );
+            eligible_outputs
+        }
+
         #[test]
         fn ledger_writes_receive_before_send() {
             let address =
@@ -312,14 +324,7 @@ mod test {
             let mut input2 = InputRuneBalance::dummy();
             input2.address(None).amount(1000);
             available_inputs.push_back(input2);
-            let mut eligible_outputs = HashMap::new();
-            eligible_outputs.insert(
-                0u32,
-                ScriptBuf::from_hex(
-                    "5120388dfba1b0069bbb0ad5eef62c1a94c46e91a3454accf40bf34b80f75e2708db",
-                )
-                .unwrap(),
-            );
+            let eligible_outputs = dummy_eligible_output();
             let mut next_event_index = 0;
 
             let results = move_rune_balance_to_output(
@@ -344,6 +349,216 @@ mod test {
             assert_eq!(send.amount.unwrap().0, 1000u128);
 
             assert_eq!(results.len(), 2);
+            assert_eq!(available_inputs.len(), 0);
+        }
+
+        #[test]
+        fn move_to_empty_output_is_burned() {
+            let address =
+                Some("bc1p8zxlhgdsq6dmkzk4ammzcx55c3hfrg69ftx0gzlnfwq0wh38prds0nzqwf".to_string());
+            let mut available_inputs = VecDeque::new();
+            let mut input1 = InputRuneBalance::dummy();
+            input1.address(address.clone()).amount(1000);
+            available_inputs.push_back(input1);
+
+            let results = move_rune_balance_to_output(
+                &TransactionLocation::dummy(),
+                None, // Burn
+                &RuneId::new(840000, 25).unwrap(),
+                &mut available_inputs,
+                &HashMap::new(),
+                0,
+                &mut 0,
+                &Context::empty(),
+            );
+
+            assert_eq!(results.len(), 1);
+            let entry1 = results.get(0).unwrap();
+            assert_eq!(entry1.operation, DbLedgerOperation::Burn);
+            assert_eq!(entry1.address, address);
+            assert_eq!(entry1.amount.unwrap().0, 1000);
+            assert_eq!(available_inputs.len(), 0);
+        }
+
+        #[test]
+        fn moves_partial_input_balance() {
+            let mut available_inputs = VecDeque::new();
+            let mut input1 = InputRuneBalance::dummy();
+            input1.amount(5000); // More than required in this move.
+            available_inputs.push_back(input1);
+            let eligible_outputs = dummy_eligible_output();
+
+            let results = move_rune_balance_to_output(
+                &TransactionLocation::dummy(),
+                Some(0),
+                &RuneId::new(840000, 25).unwrap(),
+                &mut available_inputs,
+                &eligible_outputs,
+                1000, // Less than total available in first input.
+                &mut 0,
+                &Context::empty(),
+            );
+
+            assert_eq!(results.len(), 2);
+            let entry1 = results.get(0).unwrap();
+            assert_eq!(entry1.operation, DbLedgerOperation::Receive);
+            assert_eq!(entry1.amount.unwrap().0, 1000);
+            let entry2 = results.get(1).unwrap();
+            assert_eq!(entry2.operation, DbLedgerOperation::Send);
+            assert_eq!(entry2.amount.unwrap().0, 1000);
+            // Remainder is still in available inputs.
+            let remaining = available_inputs.get(0).unwrap();
+            assert_eq!(remaining.amount, 4000);
+        }
+
+        #[test]
+        fn moves_insufficient_input_balance() {
+            let mut available_inputs = VecDeque::new();
+            let mut input1 = InputRuneBalance::dummy();
+            input1.amount(1000); // Insufficient.
+            available_inputs.push_back(input1);
+            let eligible_outputs = dummy_eligible_output();
+
+            let results = move_rune_balance_to_output(
+                &TransactionLocation::dummy(),
+                Some(0),
+                &RuneId::new(840000, 25).unwrap(),
+                &mut available_inputs,
+                &eligible_outputs,
+                3000, // More than total available in input.
+                &mut 0,
+                &Context::empty(),
+            );
+
+            assert_eq!(results.len(), 2);
+            let entry1 = results.get(0).unwrap();
+            assert_eq!(entry1.operation, DbLedgerOperation::Receive);
+            assert_eq!(entry1.amount.unwrap().0, 1000);
+            let entry2 = results.get(1).unwrap();
+            assert_eq!(entry2.operation, DbLedgerOperation::Send);
+            assert_eq!(entry2.amount.unwrap().0, 1000);
+            assert_eq!(available_inputs.len(), 0);
+        }
+
+        #[test]
+        fn moves_all_remaining_balance() {
+            let mut available_inputs = VecDeque::new();
+            let mut input1 = InputRuneBalance::dummy();
+            input1.amount(6000);
+            available_inputs.push_back(input1);
+            let mut input2 = InputRuneBalance::dummy();
+            input2.amount(2000);
+            available_inputs.push_back(input2);
+            let mut input3 = InputRuneBalance::dummy();
+            input3.amount(2000);
+            available_inputs.push_back(input3);
+            let eligible_outputs = dummy_eligible_output();
+
+            let results = move_rune_balance_to_output(
+                &TransactionLocation::dummy(),
+                Some(0),
+                &RuneId::new(840000, 25).unwrap(),
+                &mut available_inputs,
+                &eligible_outputs,
+                0, // Move all.
+                &mut 0,
+                &Context::empty(),
+            );
+
+            assert_eq!(results.len(), 4);
+            let entry1 = results.get(0).unwrap();
+            assert_eq!(entry1.operation, DbLedgerOperation::Receive);
+            assert_eq!(entry1.amount.unwrap().0, 10000);
+            let entry2 = results.get(1).unwrap();
+            assert_eq!(entry2.operation, DbLedgerOperation::Send);
+            assert_eq!(entry2.amount.unwrap().0, 6000);
+            let entry3 = results.get(2).unwrap();
+            assert_eq!(entry3.operation, DbLedgerOperation::Send);
+            assert_eq!(entry3.amount.unwrap().0, 2000);
+            let entry4 = results.get(3).unwrap();
+            assert_eq!(entry4.operation, DbLedgerOperation::Send);
+            assert_eq!(entry4.amount.unwrap().0, 2000);
+            assert_eq!(available_inputs.len(), 0);
+        }
+
+        #[test]
+        fn move_to_output_with_address_failure_is_burned() {
+            let mut available_inputs = VecDeque::new();
+            let mut input1 = InputRuneBalance::dummy();
+            input1.amount(1000);
+            available_inputs.push_back(input1);
+            let mut eligible_outputs = HashMap::new();
+            // Broken script buf that yields no address.
+            eligible_outputs.insert(0u32, ScriptBuf::from_hex("0101010101").unwrap());
+
+            let results = move_rune_balance_to_output(
+                &TransactionLocation::dummy(),
+                Some(0),
+                &RuneId::new(840000, 25).unwrap(),
+                &mut available_inputs,
+                &eligible_outputs,
+                1000,
+                &mut 0,
+                &Context::empty(),
+            );
+
+            assert_eq!(results.len(), 1);
+            let entry1 = results.get(0).unwrap();
+            assert_eq!(entry1.operation, DbLedgerOperation::Burn);
+            assert_eq!(entry1.amount.unwrap().0, 1000);
+            assert_eq!(available_inputs.len(), 0);
+        }
+
+        #[test]
+        fn move_to_nonexistent_output_is_burned() {
+            let mut available_inputs = VecDeque::new();
+            let mut input1 = InputRuneBalance::dummy();
+            input1.amount(1000);
+            available_inputs.push_back(input1);
+            let eligible_outputs = dummy_eligible_output();
+
+            let results = move_rune_balance_to_output(
+                &TransactionLocation::dummy(),
+                Some(5), // Output does not exist.
+                &RuneId::new(840000, 25).unwrap(),
+                &mut available_inputs,
+                &eligible_outputs,
+                1000,
+                &mut 0,
+                &Context::empty(),
+            );
+
+            assert_eq!(results.len(), 1);
+            let entry1 = results.get(0).unwrap();
+            assert_eq!(entry1.operation, DbLedgerOperation::Burn);
+            assert_eq!(entry1.amount.unwrap().0, 1000);
+            assert_eq!(available_inputs.len(), 0);
+        }
+
+        #[test]
+        fn send_not_generated_on_minted_balance() {
+            let mut available_inputs = VecDeque::new();
+            let mut input1 = InputRuneBalance::dummy();
+            input1.amount(1000).address(None); // No address because it's a mint.
+            available_inputs.push_back(input1);
+            let eligible_outputs = dummy_eligible_output();
+
+            let results = move_rune_balance_to_output(
+                &TransactionLocation::dummy(),
+                Some(0),
+                &RuneId::new(840000, 25).unwrap(),
+                &mut available_inputs,
+                &eligible_outputs,
+                1000,
+                &mut 0,
+                &Context::empty(),
+            );
+
+            assert_eq!(results.len(), 1);
+            let entry1 = results.get(0).unwrap();
+            assert_eq!(entry1.operation, DbLedgerOperation::Receive);
+            assert_eq!(entry1.amount.unwrap().0, 1000);
+            assert_eq!(available_inputs.len(), 0);
         }
     }
 
