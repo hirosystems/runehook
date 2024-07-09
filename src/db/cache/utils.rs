@@ -16,7 +16,7 @@ use crate::{
     try_info, try_warn,
 };
 
-use super::{transaction_cache::InputRuneBalance, transaction_location::TransactionLocation};
+use super::{input_rune_balance::InputRuneBalance, transaction_location::TransactionLocation};
 
 /// Takes all transaction inputs and transforms them into rune balances to be allocated for operations. Looks inside an output LRU
 /// cache and the DB when there are cache misses.
@@ -88,7 +88,7 @@ pub fn move_block_output_cache_to_output_cache(
     block_output_cache.clear();
 }
 
-/// Creates a new ledger entry.
+/// Creates a new ledger entry while incrementing the `next_event_index`.
 pub fn new_ledger_entry(
     location: &TransactionLocation,
     amount: Option<u128>,
@@ -286,166 +286,111 @@ pub fn is_rune_mintable(
 
 #[cfg(test)]
 mod test {
-    use std::collections::{HashMap, VecDeque};
-    use test_case::test_case;
+    mod move_balance {
+        use std::collections::{HashMap, VecDeque};
 
-    use bitcoin::ScriptBuf;
-    use chainhook_sdk::utils::Context;
-    use ordinals::RuneId;
+        use bitcoin::ScriptBuf;
+        use chainhook_sdk::utils::Context;
+        use ordinals::RuneId;
 
-    use crate::db::{
-        cache::{
-            transaction_cache::InputRuneBalance, transaction_location::TransactionLocation,
-            utils::move_rune_balance_to_output,
-        },
-        models::{db_ledger_operation::DbLedgerOperation, db_rune::DbRune},
-        types::{pg_numeric_u128::PgNumericU128, pg_numeric_u64::PgNumericU64},
-    };
-
-    use super::is_rune_mintable;
-
-    #[test]
-    fn receives_are_registered_first() {
-        let ctx = Context::empty();
-        let location = TransactionLocation {
-            network: bitcoin::Network::Bitcoin,
-            block_hash: "00000000000000000002c0cc73626b56fb3ee1ce605b0ce125cc4fb58775a0a9"
-                .to_string(),
-            block_height: 840002,
-            timestamp: 0,
-            tx_id: "37cd29676d626492cd9f20c60bc4f20347af9c0d91b5689ed75c05bb3e2f73ef".to_string(),
-            tx_index: 2936,
+        use crate::db::{
+            cache::{
+                input_rune_balance::InputRuneBalance, transaction_location::TransactionLocation,
+                utils::move_rune_balance_to_output,
+            },
+            models::db_ledger_operation::DbLedgerOperation,
         };
-        let mut available_inputs = VecDeque::new();
-        // An input from a previous tx
-        available_inputs.push_back(InputRuneBalance {
-            address: Some(
-                "bc1p8zxlhgdsq6dmkzk4ammzcx55c3hfrg69ftx0gzlnfwq0wh38prds0nzqwf".to_string(),
-            ),
-            amount: 1000,
-        });
-        // A mint
-        available_inputs.push_back(InputRuneBalance {
-            address: None,
-            amount: 1000,
-        });
-        let mut eligible_outputs = HashMap::new();
-        eligible_outputs.insert(
-            0u32,
-            ScriptBuf::from_hex(
-                "5120388dfba1b0069bbb0ad5eef62c1a94c46e91a3454accf40bf34b80f75e2708db",
-            )
-            .unwrap(),
-        );
-        let mut next_event_index = 0;
-        let results = move_rune_balance_to_output(
-            &location,
-            Some(0),
-            &RuneId::new(840000, 25).unwrap(),
-            &mut available_inputs,
-            &eligible_outputs,
-            0,
-            &mut next_event_index,
-            &ctx,
-        );
 
-        let receive = results.get(0).unwrap();
-        assert_eq!(receive.event_index.0, 0u32);
-        assert_eq!(receive.operation, DbLedgerOperation::Receive);
-        assert_eq!(receive.amount.unwrap().0, 2000u128);
+        #[test]
+        fn ledger_writes_receive_before_send() {
+            let address =
+                Some("bc1p8zxlhgdsq6dmkzk4ammzcx55c3hfrg69ftx0gzlnfwq0wh38prds0nzqwf".to_string());
+            let mut available_inputs = VecDeque::new();
+            let mut input1 = InputRuneBalance::dummy();
+            input1.address(address.clone()).amount(1000);
+            available_inputs.push_back(input1);
+            let mut input2 = InputRuneBalance::dummy();
+            input2.address(None).amount(1000);
+            available_inputs.push_back(input2);
+            let mut eligible_outputs = HashMap::new();
+            eligible_outputs.insert(
+                0u32,
+                ScriptBuf::from_hex(
+                    "5120388dfba1b0069bbb0ad5eef62c1a94c46e91a3454accf40bf34b80f75e2708db",
+                )
+                .unwrap(),
+            );
+            let mut next_event_index = 0;
 
-        let send = results.get(1).unwrap();
-        assert_eq!(send.event_index.0, 1u32);
-        assert_eq!(send.operation, DbLedgerOperation::Send);
-        assert_eq!(send.amount.unwrap().0, 1000u128);
+            let results = move_rune_balance_to_output(
+                &TransactionLocation::dummy(),
+                Some(0),
+                &RuneId::new(840000, 25).unwrap(),
+                &mut available_inputs,
+                &eligible_outputs,
+                0,
+                &mut next_event_index,
+                &Context::empty(),
+            );
 
-        assert_eq!(results.len(), 2);
+            let receive = results.get(0).unwrap();
+            assert_eq!(receive.event_index.0, 0u32);
+            assert_eq!(receive.operation, DbLedgerOperation::Receive);
+            assert_eq!(receive.amount.unwrap().0, 2000u128);
+
+            let send = results.get(1).unwrap();
+            assert_eq!(send.event_index.0, 1u32);
+            assert_eq!(send.operation, DbLedgerOperation::Send);
+            assert_eq!(send.amount.unwrap().0, 1000u128);
+
+            assert_eq!(results.len(), 2);
+        }
     }
 
-    #[test_case(840000 => false; "early block")]
-    #[test_case(840500 => false; "late block")]
-    #[test_case(840150 => true; "block in window")]
-    #[test_case(840100 => true; "first block")]
-    #[test_case(840200 => true; "last block")]
-    fn mint_block_height_terms_are_validated(block_height: u64) -> bool {
-        let mut rune = DbRune::factory();
-        rune.terms_height_start(Some(PgNumericU64(840100)));
-        rune.terms_height_end(Some(PgNumericU64(840200)));
-        let mut location = TransactionLocation::factory();
-        location.block_height(block_height);
-        is_rune_mintable(&rune, 0, &location)
+    mod mint_validation {
+        use test_case::test_case;
+
+        use crate::db::{
+            cache::{transaction_location::TransactionLocation, utils::is_rune_mintable},
+            models::db_rune::DbRune,
+            types::{pg_numeric_u128::PgNumericU128, pg_numeric_u64::PgNumericU64},
+        };
+
+        #[test_case(840000 => false; "early block")]
+        #[test_case(840500 => false; "late block")]
+        #[test_case(840150 => true; "block in window")]
+        #[test_case(840100 => true; "first block")]
+        #[test_case(840200 => true; "last block")]
+        fn mint_block_height_terms_are_validated(block_height: u64) -> bool {
+            let mut rune = DbRune::factory();
+            rune.terms_height_start(Some(PgNumericU64(840100)));
+            rune.terms_height_end(Some(PgNumericU64(840200)));
+            let mut location = TransactionLocation::dummy();
+            location.block_height(block_height);
+            is_rune_mintable(&rune, 0, &location)
+        }
+
+        #[test_case(840000 => false; "early block")]
+        #[test_case(840500 => false; "late block")]
+        #[test_case(840150 => true; "block in window")]
+        #[test_case(840100 => true; "first block")]
+        #[test_case(840200 => true; "last block")]
+        fn mint_block_offset_terms_are_validated(block_height: u64) -> bool {
+            let mut rune = DbRune::factory();
+            rune.terms_offset_start(Some(PgNumericU64(100)));
+            rune.terms_offset_end(Some(PgNumericU64(200)));
+            let mut location = TransactionLocation::dummy();
+            location.block_height(block_height);
+            is_rune_mintable(&rune, 0, &location)
+        }
+
+        #[test_case(0 => true; "first mint")]
+        #[test_case(49 => true; "last mint")]
+        #[test_case(50 => false; "out of range")]
+        fn mint_cap_is_validated(cap: u128) -> bool {
+            let mut rune = DbRune::factory();
+            rune.terms_cap(Some(PgNumericU128(50)));
+            is_rune_mintable(&rune, cap, &TransactionLocation::dummy())
+        }
     }
-
-    #[test_case(840000 => false; "early block")]
-    #[test_case(840500 => false; "late block")]
-    #[test_case(840150 => true; "block in window")]
-    #[test_case(840100 => true; "first block")]
-    #[test_case(840200 => true; "last block")]
-    fn mint_block_offset_terms_are_validated(block_height: u64) -> bool {
-        let mut rune = DbRune::factory();
-        rune.terms_offset_start(Some(PgNumericU64(100)));
-        rune.terms_offset_end(Some(PgNumericU64(200)));
-        let mut location = TransactionLocation::factory();
-        location.block_height(block_height);
-        is_rune_mintable(&rune, 0, &location)
-    }
-
-    #[test_case(0 => true; "first mint")]
-    #[test_case(49 => true; "last mint")]
-    #[test_case(50 => false; "out of range")]
-    fn mint_cap_is_validated(cap: u128) -> bool {
-        let mut rune = DbRune::factory();
-        rune.terms_cap(Some(PgNumericU128(50)));
-        is_rune_mintable(&rune, cap, &TransactionLocation::factory())
-    }
-
-    // use std::{collections::HashMap, num::NonZeroUsize, str::FromStr};
-
-    // use chainhook_sdk::{
-    //     types::{
-    //         bitcoin::{OutPoint, TxIn},
-    //         TransactionIdentifier,
-    //     },
-    //     utils::Context,
-    // };
-    // use lru::LruCache;
-    // use ordinals::RuneId;
-
-    // use crate::db::cache::transaction_cache::InputRuneBalance;
-
-    // #[test]
-    // fn from_output_cache() {
-    //     let tx_inputs = vec![TxIn {
-    //         previous_output: OutPoint {
-    //             txid: TransactionIdentifier {
-    //                 hash: "aea76e5ef8135851d0387074cf7672013779e4506e56122e0e698e12ede62681"
-    //                     .to_string(),
-    //             },
-    //             vout: 2,
-    //             value: 100,
-    //             block_height: 848300,
-    //         },
-    //         script_sig: "".to_string(),
-    //         sequence: 1,
-    //         witness: vec![],
-    //     }];
-    //     let mut value = HashMap::new();
-    //     value.insert(
-    //         RuneId::from_str("840000:1").unwrap(),
-    //         vec![InputRuneBalance {
-    //             address: Some("1EDYZPvGqKzZYp6DoTtcgXwvSAkA9d9UKU".to_string()),
-    //             amount: 10000,
-    //         }],
-    //     );
-    //     let mut output_cache: LruCache<(String, u32), HashMap<RuneId, Vec<InputRuneBalance>>> =
-    //         LruCache::new(NonZeroUsize::new(2).unwrap());
-    //     output_cache.put(
-    //         (
-    //             "aea76e5ef8135851d0387074cf7672013779e4506e56122e0e698e12ede62681".to_string(),
-    //             2,
-    //         ),
-    //         value,
-    //     );
-    //     let ctx = Context::empty();
-    // }
 }

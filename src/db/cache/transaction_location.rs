@@ -34,7 +34,7 @@ impl fmt::Display for TransactionLocation {
 
 #[cfg(test)]
 impl TransactionLocation {
-    pub fn factory() -> Self {
+    pub fn dummy() -> Self {
         TransactionLocation {
             network: Network::Bitcoin,
             block_hash: "0000000000000000000320283a032748cef8227873ff4872689bf23f1cda83a5"

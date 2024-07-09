@@ -1,6 +1,6 @@
 use std::{collections::HashMap, process, str::FromStr};
 
-use cache::transaction_cache::InputRuneBalance;
+use cache::input_rune_balance::InputRuneBalance;
 use chainhook_sdk::utils::Context;
 use models::{
     db_balance_change::DbBalanceChange, db_ledger_entry::DbLedgerEntry, db_rune::DbRune,
