@@ -89,7 +89,7 @@ pub fn move_block_output_cache_to_output_cache(
 }
 
 /// Creates a new ledger entry while incrementing the `next_event_index`.
-pub fn new_ledger_entry(
+pub fn new_sequential_ledger_entry(
     location: &TransactionLocation,
     amount: Option<u128>,
     rune_id: RuneId,
@@ -117,15 +117,25 @@ pub fn new_ledger_entry(
     entry
 }
 
-/// Takes `amount` rune balance from `available_inputs` and moves it to `output` by generating the correct ledger entries.
-/// Modifies `available_inputs` to consume balance that is already moved. If `amount` is zero, all remaining balances will be
-/// transferred. If `output` is `None`, the runes will be burnt.
+/// Moves rune balance from transaction inputs into a transaction output.
+///
+/// # Arguments
+///
+/// * `location` - Transaction location.
+/// * `output` - Output where runes will be moved to. If `None`, runes are burned.
+/// * `rune_id` - Rune that is being moved.
+/// * `input_balances` - Balances input to this transaction for this rune. This value will be modified by the moves happening in
+///   this function.
+/// * `outputs` - Transaction outputs eligible to receive runes.
+/// * `amount` - Amount of balance to move. If value is zero, all inputs will be moved to the output.
+/// * `next_event_index` - Next sequential event index to create. This value will be modified.
+/// * `ctx` - Context.
 pub fn move_rune_balance_to_output(
     location: &TransactionLocation,
     output: Option<u32>,
     rune_id: &RuneId,
-    available_inputs: &mut VecDeque<InputRuneBalance>,
-    eligible_outputs: &HashMap<u32, ScriptBuf>,
+    input_balances: &mut VecDeque<InputRuneBalance>,
+    outputs: &HashMap<u32, ScriptBuf>,
     amount: u128,
     next_event_index: &mut u32,
     ctx: &Context,
@@ -133,7 +143,7 @@ pub fn move_rune_balance_to_output(
     let mut results = vec![];
     // Who is this balance going to?
     let receiver_address = if let Some(output) = output {
-        match eligible_outputs.get(&output) {
+        match outputs.get(&output) {
             Some(script) => match Address::from_script(script, location.network) {
                 Ok(address) => Some(address.to_string()),
                 Err(e) => {
@@ -171,7 +181,7 @@ pub fn move_rune_balance_to_output(
     let mut senders = vec![];
     loop {
         // Do we still have input balance left to move?
-        let Some(input_bal) = available_inputs.pop_front() else {
+        let Some(input_bal) = input_balances.pop_front() else {
             break;
         };
         // Select the correct move amount.
@@ -188,7 +198,7 @@ pub fn move_rune_balance_to_output(
         // Is there still some balance left on this input? If so, keep it for later but break the loop because we've satisfied the
         // move amount.
         if balance_taken < input_bal.amount {
-            available_inputs.push_front(InputRuneBalance {
+            input_balances.push_front(InputRuneBalance {
                 address: input_bal.address,
                 amount: input_bal.amount - balance_taken,
             });
@@ -201,7 +211,7 @@ pub fn move_rune_balance_to_output(
     }
     // Add the "receive" entry, if applicable.
     if receiver_address.is_some() && total_sent > 0 {
-        results.push(new_ledger_entry(
+        results.push(new_sequential_ledger_entry(
             location,
             Some(total_sent),
             *rune_id,
@@ -223,7 +233,7 @@ pub fn move_rune_balance_to_output(
     }
     // Add the "send"/"burn" entries.
     for (balance_taken, sender_address) in senders.iter() {
-        results.push(new_ledger_entry(
+        results.push(new_sequential_ledger_entry(
             location,
             Some(*balance_taken),
             *rune_id,
@@ -606,6 +616,53 @@ mod test {
             let mut rune = DbRune::factory();
             rune.terms_cap(Some(PgNumericU128(50)));
             is_rune_mintable(&rune, cap, &TransactionLocation::dummy())
+        }
+    }
+
+    mod sequential_ledger_entry {
+        use ordinals::RuneId;
+
+        use crate::db::{cache::{
+            transaction_location::TransactionLocation, utils::new_sequential_ledger_entry,
+        }, models::db_ledger_operation::DbLedgerOperation};
+
+        #[test]
+        fn increments_event_index() {
+            let location = TransactionLocation::dummy();
+            let rune_id = RuneId::new(840000, 25).unwrap();
+            let address =
+                Some("bc1p8zxlhgdsq6dmkzk4ammzcx55c3hfrg69ftx0gzlnfwq0wh38prds0nzqwf".to_string());
+            let mut event_index = 0u32;
+
+            let event0 = new_sequential_ledger_entry(
+                &location,
+                Some(100),
+                rune_id,
+                Some(0),
+                address.as_ref(),
+                None,
+                DbLedgerOperation::Receive,
+                &mut event_index,
+            );
+            assert_eq!(event0.event_index.0, 0);
+            assert_eq!(event0.amount.unwrap().0, 100);
+            assert_eq!(event0.address, address);
+
+            let event1 = new_sequential_ledger_entry(
+                &location,
+                Some(300),
+                rune_id,
+                Some(0),
+                None,
+                None,
+                DbLedgerOperation::Receive,
+                &mut event_index,
+            );
+            assert_eq!(event1.event_index.0, 1);
+            assert_eq!(event1.amount.unwrap().0, 300);
+            assert_eq!(event1.address, None);
+
+            assert_eq!(event_index, 2);
         }
     }
 }
