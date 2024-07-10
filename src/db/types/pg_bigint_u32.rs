@@ -43,6 +43,7 @@ impl AddAssign<u32> for PgBigIntU32 {
 
 #[cfg(test)]
 mod test {
+    use chainhook_sdk::utils::Context;
     use test_case::test_case;
 
     use crate::db::pg_test_client;
@@ -53,7 +54,7 @@ mod test {
     #[test_case(0; "zero")]
     #[tokio::test]
     async fn test_u32_to_postgres(val: u32) {
-        let mut client = pg_test_client().await;
+        let mut client = pg_test_client(false, &Context::empty()).await;
         let value = PgBigIntU32(val);
         let tx = client.transaction().await.unwrap();
         let _ = tx.query("CREATE TABLE test (value BIGINT)", &[]).await;

@@ -1,2 +1,6 @@
 [alias]
 runehook-install = "install --path . --locked --force"
+
+[env]
+# Run tests in one thread so we can support postgres migrations correctly.
+RUST_TEST_THREADS = "1"
