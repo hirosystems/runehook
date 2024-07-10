@@ -1,2 +1,5 @@
 [alias]
 runehook-install = "install --path . --locked --force"
+
+[env]
+RUST_TEST_THREADS = "1"

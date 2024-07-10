@@ -39,6 +39,7 @@ impl<'a> FromSql<'a> for PgNumericU64 {
 
 #[cfg(test)]
 mod test {
+    use chainhook_sdk::utils::Context;
     use test_case::test_case;
 
     use crate::db::pg_test_client;
@@ -50,7 +51,7 @@ mod test {
     #[test_case(0; "zero")]
     #[tokio::test]
     async fn test_u64_to_postgres(val: u64) {
-        let mut client = pg_test_client().await;
+        let mut client = pg_test_client(false, &Context::empty()).await;
         let value = PgNumericU64(val);
         let tx = client.transaction().await.unwrap();
         let _ = tx.query("CREATE TABLE test (value NUMERIC)", &[]).await;

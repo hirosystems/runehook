@@ -20,8 +20,16 @@ use super::{input_rune_balance::InputRuneBalance, transaction_location::Transact
 
 /// Takes all transaction inputs and transforms them into rune balances to be allocated for operations. Looks inside an output LRU
 /// cache and the DB when there are cache misses.
+///
+/// # Arguments
+///
+/// * `inputs` - Raw transaction inputs
+/// * `block_output_cache` - Cache with output balances produced by the current block
+/// * `output_cache` - LRU cache with output balances
+/// * `db_tx` - DB transaction
+/// * `ctx` - Context
 pub async fn input_rune_balances_from_tx_inputs(
-    tx_inputs: &Vec<TxIn>,
+    inputs: &Vec<TxIn>,
     block_output_cache: &HashMap<(String, u32), HashMap<RuneId, Vec<InputRuneBalance>>>,
     output_cache: &mut LruCache<(String, u32), HashMap<RuneId, Vec<InputRuneBalance>>>,
     db_tx: &mut Transaction<'_>,
@@ -32,7 +40,7 @@ pub async fn input_rune_balances_from_tx_inputs(
     let mut cache_misses = vec![];
 
     // Look in both current block output cache and in long term LRU cache.
-    for (i, input) in tx_inputs.iter().enumerate() {
+    for (i, input) in inputs.iter().enumerate() {
         let tx_id = input.previous_output.txid.hash[2..].to_string();
         let vout = input.previous_output.vout;
         let k = (tx_id.clone(), vout);
@@ -301,6 +309,7 @@ mod test {
 
         use bitcoin::ScriptBuf;
         use chainhook_sdk::utils::Context;
+        use maplit::hashmap;
         use ordinals::RuneId;
 
         use crate::db::{
@@ -312,15 +321,12 @@ mod test {
         };
 
         fn dummy_eligible_output() -> HashMap<u32, ScriptBuf> {
-            let mut eligible_outputs = HashMap::new();
-            eligible_outputs.insert(
-                0u32,
-                ScriptBuf::from_hex(
+            hashmap! {
+                0u32 => ScriptBuf::from_hex(
                     "5120388dfba1b0069bbb0ad5eef62c1a94c46e91a3454accf40bf34b80f75e2708db",
                 )
-                .unwrap(),
-            );
-            eligible_outputs
+                .unwrap()
+            }
         }
 
         #[test]
@@ -622,9 +628,12 @@ mod test {
     mod sequential_ledger_entry {
         use ordinals::RuneId;
 
-        use crate::db::{cache::{
-            transaction_location::TransactionLocation, utils::new_sequential_ledger_entry,
-        }, models::db_ledger_operation::DbLedgerOperation};
+        use crate::db::{
+            cache::{
+                transaction_location::TransactionLocation, utils::new_sequential_ledger_entry,
+            },
+            models::db_ledger_operation::DbLedgerOperation,
+        };
 
         #[test]
         fn increments_event_index() {
@@ -663,6 +672,220 @@ mod test {
             assert_eq!(event1.address, None);
 
             assert_eq!(event_index, 2);
+        }
+    }
+
+    mod input_balances {
+        use std::num::NonZeroUsize;
+
+        use chainhook_sdk::{
+            types::{
+                bitcoin::{OutPoint, TxIn},
+                TransactionIdentifier,
+            },
+            utils::Context,
+        };
+        use lru::LruCache;
+        use maplit::hashmap;
+        use ordinals::RuneId;
+
+        use crate::db::{
+            cache::{
+                input_rune_balance::InputRuneBalance, utils::input_rune_balances_from_tx_inputs,
+            }, models::{db_ledger_entry::DbLedgerEntry, db_ledger_operation::DbLedgerOperation}, pg_insert_ledger_entries, pg_test_client, pg_test_roll_back_migrations
+        };
+
+        #[tokio::test]
+        async fn from_block_cache() {
+            let inputs = vec![TxIn {
+                previous_output: OutPoint {
+                    txid: TransactionIdentifier {
+                        hash: "0x045fe33f1174d6a72084e751735a89746a259c6d3e418b65c03ec0740f924c7b"
+                            .to_string(),
+                    },
+                    vout: 1,
+                    value: 100,
+                    block_height: 840000,
+                },
+                script_sig: "".to_string(),
+                sequence: 0,
+                witness: vec![],
+            }];
+            let rune_id = RuneId::new(840000, 25).unwrap();
+            let block_output_cache = hashmap! {
+                ("045fe33f1174d6a72084e751735a89746a259c6d3e418b65c03ec0740f924c7b"
+                            .to_string(), 1) => hashmap! {
+                                rune_id => vec![InputRuneBalance { address: None, amount: 2000 }]
+                            }
+            };
+            let mut output_cache = LruCache::new(NonZeroUsize::new(1).unwrap());
+            let ctx = Context::empty();
+
+            let mut pg_client = pg_test_client(true, &ctx).await;
+            let mut db_tx = pg_client.transaction().await.unwrap();
+            let results = input_rune_balances_from_tx_inputs(
+                &inputs,
+                &block_output_cache,
+                &mut output_cache,
+                &mut db_tx,
+                &ctx,
+            )
+            .await;
+            let _ = db_tx.rollback().await;
+            pg_test_roll_back_migrations(&mut pg_client, &ctx).await;
+
+            assert_eq!(results.len(), 1);
+            let rune_results = results.get(&rune_id).unwrap();
+            assert_eq!(rune_results.len(), 1);
+            let input_bal = rune_results.get(0).unwrap();
+            assert_eq!(input_bal.address, None);
+            assert_eq!(input_bal.amount, 2000);
+        }
+
+        #[tokio::test]
+        async fn from_lru_cache() {
+            let inputs = vec![TxIn {
+                previous_output: OutPoint {
+                    txid: TransactionIdentifier {
+                        hash: "0x045fe33f1174d6a72084e751735a89746a259c6d3e418b65c03ec0740f924c7b"
+                            .to_string(),
+                    },
+                    vout: 1,
+                    value: 100,
+                    block_height: 840000,
+                },
+                script_sig: "".to_string(),
+                sequence: 0,
+                witness: vec![],
+            }];
+            let rune_id = RuneId::new(840000, 25).unwrap();
+            let block_output_cache = hashmap! {};
+            let mut output_cache = LruCache::new(NonZeroUsize::new(1).unwrap());
+            output_cache.put(
+                (
+                    "045fe33f1174d6a72084e751735a89746a259c6d3e418b65c03ec0740f924c7b".to_string(),
+                    1,
+                ),
+                hashmap! {
+                    rune_id => vec![InputRuneBalance { address: None, amount: 2000 }]
+                },
+            );
+            let ctx = Context::empty();
+
+            let mut pg_client = pg_test_client(true, &ctx).await;
+            let mut db_tx = pg_client.transaction().await.unwrap();
+            let results = input_rune_balances_from_tx_inputs(
+                &inputs,
+                &block_output_cache,
+                &mut output_cache,
+                &mut db_tx,
+                &ctx,
+            )
+            .await;
+            let _ = db_tx.rollback().await;
+            pg_test_roll_back_migrations(&mut pg_client, &ctx).await;
+
+            assert_eq!(results.len(), 1);
+            let rune_results = results.get(&rune_id).unwrap();
+            assert_eq!(rune_results.len(), 1);
+            let input_bal = rune_results.get(0).unwrap();
+            assert_eq!(input_bal.address, None);
+            assert_eq!(input_bal.amount, 2000);
+        }
+
+        #[tokio::test]
+        async fn from_db() {
+            let inputs = vec![TxIn {
+                previous_output: OutPoint {
+                    txid: TransactionIdentifier {
+                        hash: "0x045fe33f1174d6a72084e751735a89746a259c6d3e418b65c03ec0740f924c7b"
+                            .to_string(),
+                    },
+                    vout: 1,
+                    value: 100,
+                    block_height: 840000,
+                },
+                script_sig: "".to_string(),
+                sequence: 0,
+                witness: vec![],
+            }];
+            let rune_id = RuneId::new(840000, 25).unwrap();
+            let block_output_cache = hashmap! {};
+            let mut output_cache = LruCache::new(NonZeroUsize::new(1).unwrap());
+            let ctx = Context::empty();
+
+            let mut pg_client = pg_test_client(true, &ctx).await;
+            let mut db_tx = pg_client.transaction().await.unwrap();
+
+            let entry = DbLedgerEntry::from_values(
+                Some(2000),
+                rune_id,
+                &"0x0000000000000000000044642cc1f64c22579d46a2a149ef2a51f9c98cb622e1".to_string(),
+                840000,
+                0,
+                0,
+                &"0x045fe33f1174d6a72084e751735a89746a259c6d3e418b65c03ec0740f924c7b".to_string(),
+                Some(1),
+                None,
+                None,
+                DbLedgerOperation::Receive,
+                0,
+            );
+            let _ = pg_insert_ledger_entries(&vec![entry], &mut db_tx, &ctx).await;
+
+            let results = input_rune_balances_from_tx_inputs(
+                &inputs,
+                &block_output_cache,
+                &mut output_cache,
+                &mut db_tx,
+                &ctx,
+            )
+            .await;
+            let _ = db_tx.rollback().await;
+            pg_test_roll_back_migrations(&mut pg_client, &ctx).await;
+
+            assert_eq!(results.len(), 1);
+            let rune_results = results.get(&rune_id).unwrap();
+            assert_eq!(rune_results.len(), 1);
+            let input_bal = rune_results.get(0).unwrap();
+            assert_eq!(input_bal.address, None);
+            assert_eq!(input_bal.amount, 2000);
+        }
+
+        #[tokio::test]
+        async fn inputs_without_balances() {
+            let inputs = vec![TxIn {
+                previous_output: OutPoint {
+                    txid: TransactionIdentifier {
+                        hash: "0x045fe33f1174d6a72084e751735a89746a259c6d3e418b65c03ec0740f924c7b"
+                            .to_string(),
+                    },
+                    vout: 1,
+                    value: 100,
+                    block_height: 840000,
+                },
+                script_sig: "".to_string(),
+                sequence: 0,
+                witness: vec![],
+            }];
+            let block_output_cache = hashmap! {};
+            let mut output_cache = LruCache::new(NonZeroUsize::new(1).unwrap());
+            let ctx = Context::empty();
+
+            let mut pg_client = pg_test_client(true, &ctx).await;
+            let mut db_tx = pg_client.transaction().await.unwrap();
+            let results = input_rune_balances_from_tx_inputs(
+                &inputs,
+                &block_output_cache,
+                &mut output_cache,
+                &mut db_tx,
+                &ctx,
+            )
+            .await;
+            let _ = db_tx.rollback().await;
+            pg_test_roll_back_migrations(&mut pg_client, &ctx).await;
+
+            assert_eq!(results.len(), 0);
         }
     }
 }
