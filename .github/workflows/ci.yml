@@ -146,10 +146,8 @@ jobs:
         run: |
           rustup update
 
-      - name: Install and run cargo-tarpaulin
+      - name: Run tests
         run: |
-          cargo install cargo-tarpaulin
-          cargo --version
           cargo tarpaulin --out lcov -- --test-threads=1
 
       - name: Upload coverage reports to Codecov
