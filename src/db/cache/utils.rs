@@ -76,6 +76,11 @@ pub async fn input_rune_balances_from_tx_inputs(
 }
 
 /// Moves data from the current block's output cache to the long-term LRU output cache. Clears the block output cache when done.
+///
+/// # Arguments
+///
+/// * `block_output_cache` - Block output cache
+/// * `output_cache` - Output LRU cache
 pub fn move_block_output_cache_to_output_cache(
     block_output_cache: &mut HashMap<(String, u32), HashMap<RuneId, Vec<InputRuneBalance>>>,
     output_cache: &mut LruCache<(String, u32), HashMap<RuneId, Vec<InputRuneBalance>>>,
@@ -692,7 +697,9 @@ mod test {
         use crate::db::{
             cache::{
                 input_rune_balance::InputRuneBalance, utils::input_rune_balances_from_tx_inputs,
-            }, models::{db_ledger_entry::DbLedgerEntry, db_ledger_operation::DbLedgerOperation}, pg_insert_ledger_entries, pg_test_client, pg_test_roll_back_migrations
+            },
+            models::{db_ledger_entry::DbLedgerEntry, db_ledger_operation::DbLedgerOperation},
+            pg_insert_ledger_entries, pg_test_client, pg_test_roll_back_migrations,
         };
 
         #[tokio::test]
@@ -886,6 +893,46 @@ mod test {
             pg_test_roll_back_migrations(&mut pg_client, &ctx).await;
 
             assert_eq!(results.len(), 0);
+        }
+    }
+
+    mod cache_move {
+        use std::num::NonZeroUsize;
+
+        use lru::LruCache;
+        use maplit::hashmap;
+        use ordinals::RuneId;
+
+        use crate::db::cache::{
+            input_rune_balance::InputRuneBalance, utils::move_block_output_cache_to_output_cache,
+        };
+
+        #[test]
+        fn moves_to_lru_output_cache_and_clears() {
+            let rune_id = RuneId::new(840000, 25).unwrap();
+            let mut block_output_cache = hashmap! {
+                ("045fe33f1174d6a72084e751735a89746a259c6d3e418b65c03ec0740f924c7b"
+                            .to_string(), 1) => hashmap! {
+                                rune_id => vec![InputRuneBalance { address: None, amount: 2000 }]
+                            }
+            };
+            let mut output_cache = LruCache::new(NonZeroUsize::new(1).unwrap());
+
+            move_block_output_cache_to_output_cache(&mut block_output_cache, &mut output_cache);
+
+            let moved_val = output_cache
+                .get(&(
+                    "045fe33f1174d6a72084e751735a89746a259c6d3e418b65c03ec0740f924c7b".to_string(),
+                    1,
+                ))
+                .unwrap();
+            assert_eq!(moved_val.len(), 1);
+            let balances = moved_val.get(&rune_id).unwrap();
+            assert_eq!(balances.len(), 1);
+            let balance = balances.get(0).unwrap();
+            assert_eq!(balance.address, None);
+            assert_eq!(balance.amount, 2000);
+            assert_eq!(block_output_cache.len(), 0);
         }
     }
 }
