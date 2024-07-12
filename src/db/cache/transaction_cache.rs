@@ -35,7 +35,7 @@ pub struct TransactionCache {
     pub output_pointer: Option<u32>,
     /// Holds input runes for the current transaction (input to this tx, premined or minted). Balances in the vector are in the
     /// order in which they were input to this transaction.
-    input_runes: HashMap<RuneId, VecDeque<InputRuneBalance>>,
+    pub input_runes: HashMap<RuneId, VecDeque<InputRuneBalance>>,
     /// Non-OP_RETURN outputs in this transaction
     eligible_outputs: HashMap<u32, ScriptBuf>,
     /// Total outputs contained in this transaction, including non-eligible outputs.
@@ -386,5 +386,85 @@ impl TransactionCache {
             vec.push_back(entry);
             self.input_runes.insert(rune_id.clone(), vec);
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use chainhook_sdk::utils::Context;
+    use maplit::hashmap;
+    use ordinals::{Etching, Rune, RuneId, Terms};
+
+    use crate::db::{
+        cache::transaction_location::TransactionLocation,
+        models::{
+            db_ledger_operation::DbLedgerOperation,
+            db_rune::{self, DbRune},
+        },
+    };
+
+    use super::TransactionCache;
+
+    #[test]
+    fn etches_rune() {
+        let location = TransactionLocation::dummy();
+        let mut cache = TransactionCache::new(location.clone(), hashmap! {}, hashmap! {}, None, 0);
+        let etching = Etching {
+            divisibility: Some(2),
+            premine: Some(1000),
+            rune: Some(Rune::reserved(location.block_height, location.tx_index)),
+            spacers: None,
+            symbol: Some('x'),
+            terms: Some(Terms {
+                amount: Some(1000),
+                cap: None,
+                height: (None, None),
+                offset: (None, None),
+            }),
+            turbo: true,
+        };
+        let (rune_id, db_rune, db_ledger_entry) = cache.apply_etching(&etching, 1);
+
+        assert_eq!(rune_id.block, 840000);
+        assert_eq!(rune_id.tx, 0);
+        assert_eq!(db_rune.id, "840000:0");
+        assert_eq!(db_rune.name, "AAAAAAAAAAAAAAAAZOMJMODBYFG");
+        assert_eq!(db_rune.number.0, 1);
+        assert_eq!(db_ledger_entry.operation, DbLedgerOperation::Etching);
+        assert_eq!(db_ledger_entry.rune_id, "840000:0");
+    }
+
+    fn etches_cenotaph_rune() {
+        //
+    }
+
+    #[test]
+    fn mints_rune() {
+        let location = TransactionLocation::dummy();
+        let mut cache = TransactionCache::new(location.clone(), hashmap! {}, hashmap! {}, None, 0);
+        let db_rune = &DbRune::factory();
+        let rune_id = &db_rune.rune_id();
+
+        let ledger_entry = cache.apply_mint(rune_id, 0, db_rune, &Context::empty());
+
+        // test: ledger entry is produced (Mint) with the correct minted amount
+        // test: minted amount is added to the input runes (`cache.input_runes`)
+    }
+
+    #[test]
+    fn does_not_mint_fully_minted_rune() {
+        // test: ledger entry is None
+    }
+
+    fn burns_cenotaph_mint() {
+        //
+    }
+
+    fn moves_runes_with_edict() {
+        //
+    }
+
+    fn allocates_remaining_runes() {
+        //
     }
 }
