@@ -1,5 +1,3 @@
-use std::fmt;
-
 use ordinals::RuneId;
 use tokio_postgres::Row;
 
