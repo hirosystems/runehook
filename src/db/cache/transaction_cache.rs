@@ -1,12 +1,11 @@
-use std::{
-    collections::{HashMap, VecDeque},
-    vec,
-};
-
 use bitcoin::ScriptBuf;
 use chainhook_sdk::utils::Context;
 use maplit::hashmap;
 use ordinals::{Cenotaph, Edict, Etching, Rune, RuneId};
+use std::{
+    collections::{HashMap, VecDeque},
+    vec,
+};
 
 use crate::{
     db::{
@@ -413,10 +412,7 @@ mod test {
     use ordinals::{Edict, Etching, Rune, Terms};
 
     use crate::db::{
-        cache::{
-            input_rune_balance::InputRuneBalance, transaction_location::TransactionLocation,
-            utils::is_rune_mintable,
-        },
+        cache::{input_rune_balance::InputRuneBalance, transaction_location::TransactionLocation},
         models::{db_ledger_operation::DbLedgerOperation, db_rune::DbRune},
     };
 
@@ -488,7 +484,7 @@ mod test {
         // ledger entry is minted with the correct amount
         assert_eq!(ledger_entry.amount, Some(db_rune.terms_amount.unwrap()));
 
-        // test: minted amount is added to the input runes (`cache.input_runes`)
+        // minted amount is added to the input runes (`cache.input_runes`)
         assert!(cache.input_runes.contains_key(&rune_id));
     }
 
