@@ -26,12 +26,6 @@ pub struct DbLedgerEntry {
     pub timestamp: PgBigIntU32,
 }
 
-impl fmt::Display for DbLedgerEntry {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.rune_id)
-    }
-}
-
 impl DbLedgerEntry {
     pub fn from_values(
         amount: Option<u128>,
