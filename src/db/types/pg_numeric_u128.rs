@@ -64,7 +64,7 @@ pub fn pg_numeric_bytes_to_u128(raw: &[u8]) -> u128 {
     result
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PgNumericU128(pub u128);
 
 impl ToSql for PgNumericU128 {

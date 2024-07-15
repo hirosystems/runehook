@@ -1,11 +1,11 @@
+use bitcoin::ScriptBuf;
+use chainhook_sdk::utils::Context;
+use maplit::hashmap;
+use ordinals::{Cenotaph, Edict, Etching, Rune, RuneId};
 use std::{
     collections::{HashMap, VecDeque},
     vec,
 };
-
-use bitcoin::ScriptBuf;
-use chainhook_sdk::utils::Context;
-use ordinals::{Cenotaph, Edict, Etching, Rune, RuneId};
 
 use crate::{
     db::{
@@ -35,7 +35,7 @@ pub struct TransactionCache {
     pub output_pointer: Option<u32>,
     /// Holds input runes for the current transaction (input to this tx, premined or minted). Balances in the vector are in the
     /// order in which they were input to this transaction.
-    input_runes: HashMap<RuneId, VecDeque<InputRuneBalance>>,
+    pub input_runes: HashMap<RuneId, VecDeque<InputRuneBalance>>,
     /// Non-OP_RETURN outputs in this transaction
     eligible_outputs: HashMap<u32, ScriptBuf>,
     /// Total outputs contained in this transaction, including non-eligible outputs.
@@ -58,6 +58,19 @@ impl TransactionCache {
             input_runes,
             eligible_outputs,
             total_outputs,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn empty(location: TransactionLocation) -> Self {
+        TransactionCache {
+            location,
+            next_event_index: 0,
+            etching: None,
+            output_pointer: None,
+            input_runes: hashmap! {},
+            eligible_outputs: hashmap! {},
+            total_outputs: 0,
         }
     }
 
@@ -386,5 +399,232 @@ impl TransactionCache {
             vec.push_back(entry);
             self.input_runes.insert(rune_id.clone(), vec);
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::collections::VecDeque;
+
+    use bitcoin::ScriptBuf;
+    use chainhook_sdk::utils::Context;
+    use maplit::hashmap;
+    use ordinals::{Edict, Etching, Rune, Terms};
+
+    use crate::db::{
+        cache::{input_rune_balance::InputRuneBalance, transaction_location::TransactionLocation},
+        models::{db_ledger_operation::DbLedgerOperation, db_rune::DbRune},
+    };
+
+    use super::TransactionCache;
+
+    #[test]
+    fn etches_rune() {
+        let location = TransactionLocation::dummy();
+        let mut cache = TransactionCache::empty(location.clone());
+        let etching = Etching {
+            divisibility: Some(2),
+            premine: Some(1000),
+            rune: Some(Rune::reserved(location.block_height, location.tx_index)),
+            spacers: None,
+            symbol: Some('x'),
+            terms: Some(Terms {
+                amount: Some(1000),
+                cap: None,
+                height: (None, None),
+                offset: (None, None),
+            }),
+            turbo: true,
+        };
+        let (rune_id, db_rune, db_ledger_entry) = cache.apply_etching(&etching, 1);
+
+        assert_eq!(rune_id.block, 840000);
+        assert_eq!(rune_id.tx, 0);
+        assert_eq!(db_rune.id, "840000:0");
+        assert_eq!(db_rune.name, "AAAAAAAAAAAAAAAAZOMJMODBYFG");
+        assert_eq!(db_rune.number.0, 1);
+        assert_eq!(db_ledger_entry.operation, DbLedgerOperation::Etching);
+        assert_eq!(db_ledger_entry.rune_id, "840000:0");
+    }
+
+    #[test]
+    // TODO add cenotaph field to DbRune before filling this in
+    fn etches_cenotaph_rune() {
+        // let location = TransactionLocation::dummy();
+        // let mut cache = TransactionCache::empty(location.clone());
+
+        // // Create a cenotaph rune
+        // let rune = Rune::reserved(location.block_height, location.tx_index);
+        // let number = 2;
+
+        // let (_rune_id, db_rune, db_ledger_entry) = cache.apply_cenotaph_etching(&rune, number);
+
+        // // the etched rune has supply zero and is unmintable.
+        // // is_rune_mintable should have a cenotaph indicator column check
+        // assert_eq!(is_rune_mintable(&db_rune, 0, &location), false);
+        // assert_eq!(db_ledger_entry.amount, None);
+        // assert_eq!(db_rune.id, "840000:0");
+        // assert_eq!(db_ledger_entry.operation, DbLedgerOperation::Etching);
+        // assert_eq!(db_ledger_entry.rune_id, "840000:0");
+    }
+
+    #[test]
+    fn mints_rune() {
+        let location = TransactionLocation::dummy();
+        let mut cache = TransactionCache::empty(location.clone());
+        let db_rune = &DbRune::factory();
+        let rune_id = &db_rune.rune_id();
+
+        let ledger_entry = cache.apply_mint(&rune_id, 0, &db_rune, &Context::empty());
+
+        assert!(ledger_entry.is_some());
+        let ledger_entry = ledger_entry.unwrap();
+        assert_eq!(ledger_entry.operation, DbLedgerOperation::Mint);
+        assert_eq!(ledger_entry.rune_id, rune_id.to_string());
+        // ledger entry is minted with the correct amount
+        assert_eq!(ledger_entry.amount, Some(db_rune.terms_amount.unwrap()));
+
+        // minted amount is added to the input runes (`cache.input_runes`)
+        assert!(cache.input_runes.contains_key(&rune_id));
+    }
+
+    #[test]
+    fn does_not_mint_fully_minted_rune() {
+        let location = TransactionLocation::dummy();
+        let mut cache = TransactionCache::empty(location.clone());
+        let etching = Etching {
+            divisibility: Some(2),
+            premine: Some(1000),
+            rune: Some(Rune::reserved(location.block_height, location.tx_index)),
+            spacers: None,
+            symbol: Some('x'),
+            terms: Some(Terms {
+                amount: Some(1000),
+                cap: Some(1000),
+                height: (None, None),
+                offset: (None, None),
+            }),
+            turbo: true,
+        };
+        let (rune_id, db_rune, _db_ledger_entry) = cache.apply_etching(&etching, 1);
+        let ledger_entry = cache.apply_mint(&rune_id, 1000, &db_rune, &Context::empty());
+        assert!(ledger_entry.is_none());
+    }
+
+    #[test]
+    fn burns_cenotaph_mint() {
+        let location = TransactionLocation::dummy();
+        let mut cache = TransactionCache::empty(location.clone());
+
+        let db_rune = DbRune::factory();
+        let rune_id = db_rune.rune_id();
+        let ledger_entry = cache.apply_cenotaph_mint(&rune_id, 0, &db_rune, &Context::empty());
+        assert!(ledger_entry.is_some());
+        let ledger_entry = ledger_entry.unwrap();
+        assert_eq!(ledger_entry.operation, DbLedgerOperation::Burn);
+        assert_eq!(
+            ledger_entry.amount.unwrap().0,
+            db_rune.terms_amount.unwrap().0
+        );
+    }
+
+    #[test]
+    fn moves_runes_with_edict() {
+        let location = TransactionLocation::dummy();
+        let db_rune = &DbRune::factory();
+        let rune_id = &db_rune.rune_id();
+        let mut balances = VecDeque::new();
+        let sender_address =
+            "bc1p3v7r3n4hv63z4s7jkhdzxsay9xem98hxul057w2mwur406zhw8xqrpwp9w".to_string();
+        let receiver_address =
+            "bc1p8zxlhgdsq6dmkzk4ammzcx55c3hfrg69ftx0gzlnfwq0wh38prds0nzqwf".to_string();
+        balances.push_back(InputRuneBalance {
+            address: Some(sender_address.clone()),
+            amount: 1000,
+        });
+        let input_runes = hashmap! {
+            rune_id.clone() => balances
+        };
+        let eligible_outputs = hashmap! {0=> ScriptBuf::from_hex("5120388dfba1b0069bbb0ad5eef62c1a94c46e91a3454accf40bf34b80f75e2708db").unwrap()};
+        let mut cache = TransactionCache::new(location, input_runes, eligible_outputs, Some(0), 1);
+
+        let edict = Edict {
+            id: rune_id.clone(),
+            amount: 1000,
+            output: 0,
+        };
+
+        let ledger_entry = cache.apply_edict(&edict, &Context::empty());
+        assert_eq!(ledger_entry.len(), 2);
+        let receive = ledger_entry.first().unwrap();
+        assert_eq!(receive.operation, DbLedgerOperation::Receive);
+        assert_eq!(receive.address, Some(receiver_address.clone()));
+        let send = ledger_entry.last().unwrap();
+        assert_eq!(send.operation, DbLedgerOperation::Send);
+        assert_eq!(send.address, Some(sender_address.clone()));
+        assert_eq!(send.receiver_address, Some(receiver_address.clone()));
+    }
+
+    #[test]
+    fn allocates_remaining_runes_to_first_eligible_output() {
+        let location = TransactionLocation::dummy();
+        let db_rune = &DbRune::factory();
+        let rune_id = &db_rune.rune_id();
+        let mut balances = VecDeque::new();
+        let sender_address =
+            "bc1p3v7r3n4hv63z4s7jkhdzxsay9xem98hxul057w2mwur406zhw8xqrpwp9w".to_string();
+        let receiver_address =
+            "bc1p8zxlhgdsq6dmkzk4ammzcx55c3hfrg69ftx0gzlnfwq0wh38prds0nzqwf".to_string();
+        balances.push_back(InputRuneBalance {
+            address: Some(sender_address.clone()),
+            amount: 1000,
+        });
+        let input_runes = hashmap! {
+            rune_id.clone() => balances
+        };
+        let eligible_outputs = hashmap! {0=> ScriptBuf::from_hex("5120388dfba1b0069bbb0ad5eef62c1a94c46e91a3454accf40bf34b80f75e2708db").unwrap()};
+        let mut cache = TransactionCache::new(location, input_runes, eligible_outputs, Some(0), 1);
+        let ledger_entry = cache.allocate_remaining_balances(&Context::empty());
+
+        assert_eq!(ledger_entry.len(), 2);
+        let receive = ledger_entry.first().unwrap();
+        assert_eq!(receive.operation, DbLedgerOperation::Receive);
+        assert_eq!(receive.address, Some(receiver_address.clone()));
+        let send = ledger_entry.last().unwrap();
+        assert_eq!(send.operation, DbLedgerOperation::Send);
+        assert_eq!(send.address, Some(sender_address.clone()));
+        assert_eq!(send.receiver_address, Some(receiver_address.clone()));
+    }
+
+    #[test]
+    fn allocates_remaining_runes_to_runestone_pointer_output() {
+        let location = TransactionLocation::dummy();
+        let db_rune = &DbRune::factory();
+        let rune_id = &db_rune.rune_id();
+        let mut balances = VecDeque::new();
+        let sender_address =
+            "bc1p3v7r3n4hv63z4s7jkhdzxsay9xem98hxul057w2mwur406zhw8xqrpwp9w".to_string();
+        let receiver_address =
+            "bc1p8zxlhgdsq6dmkzk4ammzcx55c3hfrg69ftx0gzlnfwq0wh38prds0nzqwf".to_string();
+        balances.push_back(InputRuneBalance {
+            address: Some(sender_address.clone()),
+            amount: 1000,
+        });
+        let input_runes = hashmap! {
+            rune_id.clone() => balances
+        };
+        let eligible_outputs = hashmap! {1=> ScriptBuf::from_hex("5120388dfba1b0069bbb0ad5eef62c1a94c46e91a3454accf40bf34b80f75e2708db").unwrap()};
+        let mut cache = TransactionCache::new(location, input_runes, eligible_outputs, Some(0), 2);
+        cache.output_pointer = Some(1);
+        let ledger_entry = cache.allocate_remaining_balances(&Context::empty());
+
+        assert_eq!(ledger_entry.len(), 2);
+        let receive = ledger_entry.first().unwrap();
+        assert_eq!(receive.operation, DbLedgerOperation::Receive);
+        assert_eq!(receive.address, Some(receiver_address.clone()));
+        let send = ledger_entry.last().unwrap();
+        assert_eq!(send.operation, DbLedgerOperation::Send);
+        assert_eq!(send.address, Some(sender_address.clone()));
+        assert_eq!(send.receiver_address, Some(receiver_address.clone()));
     }
 }
