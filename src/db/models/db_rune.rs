@@ -30,6 +30,7 @@ pub struct DbRune {
     pub terms_offset_start: Option<PgNumericU64>,
     pub terms_offset_end: Option<PgNumericU64>,
     pub turbo: bool,
+    pub cenotaph: bool,
     pub timestamp: PgBigIntU32,
 }
 
@@ -87,6 +88,7 @@ impl DbRune {
             terms_offset_start,
             terms_offset_end,
             turbo: etching.turbo,
+            cenotaph: false,
             timestamp: PgBigIntU32(location.timestamp),
         }
     }
@@ -111,6 +113,7 @@ impl DbRune {
             terms_offset_start: None,
             terms_offset_end: None,
             turbo: false,
+            cenotaph: true,
             timestamp: PgBigIntU32(location.timestamp),
         }
     }
@@ -135,6 +138,7 @@ impl DbRune {
             terms_offset_start: row.get("terms_offset_start"),
             terms_offset_end: row.get("terms_offset_end"),
             turbo: row.get("turbo"),
+            cenotaph: row.get("cenotaph"),
             timestamp: row.get("timestamp"),
         }
     }
@@ -170,6 +174,7 @@ impl DbRune {
             terms_offset_start: None,
             terms_offset_end: None,
             turbo: true,
+            cenotaph: false,
             timestamp: PgBigIntU32(1713571767),
         }
     }

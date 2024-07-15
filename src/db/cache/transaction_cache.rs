@@ -412,7 +412,10 @@ mod test {
     use ordinals::{Edict, Etching, Rune, Terms};
 
     use crate::db::{
-        cache::{input_rune_balance::InputRuneBalance, transaction_location::TransactionLocation},
+        cache::{
+            input_rune_balance::InputRuneBalance, transaction_location::TransactionLocation,
+            utils::is_rune_mintable,
+        },
         models::{db_ledger_operation::DbLedgerOperation, db_rune::DbRune},
     };
 
@@ -450,22 +453,21 @@ mod test {
     #[test]
     // TODO add cenotaph field to DbRune before filling this in
     fn etches_cenotaph_rune() {
-        // let location = TransactionLocation::dummy();
-        // let mut cache = TransactionCache::empty(location.clone());
+        let location = TransactionLocation::dummy();
+        let mut cache = TransactionCache::empty(location.clone());
 
-        // // Create a cenotaph rune
-        // let rune = Rune::reserved(location.block_height, location.tx_index);
-        // let number = 2;
+        // Create a cenotaph rune
+        let rune = Rune::reserved(location.block_height, location.tx_index);
+        let number = 2;
 
-        // let (_rune_id, db_rune, db_ledger_entry) = cache.apply_cenotaph_etching(&rune, number);
+        let (_rune_id, db_rune, db_ledger_entry) = cache.apply_cenotaph_etching(&rune, number);
 
         // // the etched rune has supply zero and is unmintable.
-        // // is_rune_mintable should have a cenotaph indicator column check
-        // assert_eq!(is_rune_mintable(&db_rune, 0, &location), false);
-        // assert_eq!(db_ledger_entry.amount, None);
-        // assert_eq!(db_rune.id, "840000:0");
-        // assert_eq!(db_ledger_entry.operation, DbLedgerOperation::Etching);
-        // assert_eq!(db_ledger_entry.rune_id, "840000:0");
+        assert_eq!(is_rune_mintable(&db_rune, 0, &location), false);
+        assert_eq!(db_ledger_entry.amount, None);
+        assert_eq!(db_rune.id, "840000:0");
+        assert_eq!(db_ledger_entry.operation, DbLedgerOperation::Etching);
+        assert_eq!(db_ledger_entry.rune_id, "840000:0");
     }
 
     #[test]

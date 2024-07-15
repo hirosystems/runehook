@@ -276,6 +276,9 @@ pub fn is_rune_mintable(
     total_mints: u128,
     location: &TransactionLocation,
 ) -> bool {
+    if db_rune.cenotaph {
+        return false;
+    }
     if db_rune.terms_amount.is_none() {
         return false;
     }
