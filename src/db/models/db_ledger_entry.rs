@@ -1,3 +1,5 @@
+use std::fmt;
+
 use ordinals::RuneId;
 use tokio_postgres::Row;
 
@@ -22,6 +24,12 @@ pub struct DbLedgerEntry {
     pub amount: Option<PgNumericU128>,
     pub operation: DbLedgerOperation,
     pub timestamp: PgBigIntU32,
+}
+
+impl fmt::Display for DbLedgerEntry {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.rune_id)
+    }
 }
 
 impl DbLedgerEntry {

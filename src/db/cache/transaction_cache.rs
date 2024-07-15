@@ -5,6 +5,7 @@ use std::{
 
 use bitcoin::ScriptBuf;
 use chainhook_sdk::utils::Context;
+use maplit::hashmap;
 use ordinals::{Cenotaph, Edict, Etching, Rune, RuneId};
 
 use crate::{
@@ -58,6 +59,18 @@ impl TransactionCache {
             input_runes,
             eligible_outputs,
             total_outputs,
+        }
+    }
+
+    pub fn empty(location: TransactionLocation) -> Self {
+        TransactionCache {
+            location,
+            next_event_index: 0,
+            etching: None,
+            output_pointer: None,
+            input_runes: hashmap! {},
+            eligible_outputs: hashmap! {},
+            total_outputs: 0,
         }
     }
 
@@ -393,14 +406,11 @@ impl TransactionCache {
 mod test {
     use chainhook_sdk::utils::Context;
     use maplit::hashmap;
-    use ordinals::{Etching, Rune, RuneId, Terms};
+    use ordinals::{Edict, Etching, Rune, Terms};
 
     use crate::db::{
-        cache::transaction_location::TransactionLocation,
-        models::{
-            db_ledger_operation::DbLedgerOperation,
-            db_rune::{self, DbRune},
-        },
+        cache::{transaction_location::TransactionLocation, utils::is_rune_mintable},
+        models::{db_ledger_operation::DbLedgerOperation, db_rune::DbRune},
     };
 
     use super::TransactionCache;
@@ -408,7 +418,7 @@ mod test {
     #[test]
     fn etches_rune() {
         let location = TransactionLocation::dummy();
-        let mut cache = TransactionCache::new(location.clone(), hashmap! {}, hashmap! {}, None, 0);
+        let mut cache = TransactionCache::empty(location.clone());
         let etching = Etching {
             divisibility: Some(2),
             premine: Some(1000),
@@ -434,36 +444,114 @@ mod test {
         assert_eq!(db_ledger_entry.rune_id, "840000:0");
     }
 
+    #[test]
     fn etches_cenotaph_rune() {
-        //
+        let location = TransactionLocation::dummy();
+        let mut cache = TransactionCache::empty(location.clone());
+
+        // Create a cenotaph rune
+        let rune = Rune::reserved(location.block_height, location.tx_index);
+        let number = 2;
+
+        let (_rune_id, db_rune, db_ledger_entry) = cache.apply_cenotaph_etching(&rune, number);
+
+        // the etched rune has supply zero and is unmintable.
+        assert_eq!(is_rune_mintable(&db_rune, 0, &location), false);
+        assert_eq!(db_rune.id, "840000:0");
+        assert_eq!(db_ledger_entry.operation, DbLedgerOperation::Etching);
+        assert_eq!(db_ledger_entry.rune_id, "840000:0");
+        assert_eq!(db_ledger_entry.amount, None);
     }
 
     #[test]
     fn mints_rune() {
         let location = TransactionLocation::dummy();
-        let mut cache = TransactionCache::new(location.clone(), hashmap! {}, hashmap! {}, None, 0);
+        let mut cache = TransactionCache::empty(location.clone());
         let db_rune = &DbRune::factory();
         let rune_id = &db_rune.rune_id();
 
-        let ledger_entry = cache.apply_mint(rune_id, 0, db_rune, &Context::empty());
+        let ledger_entry = cache.apply_mint(&rune_id, 0, &db_rune, &Context::empty());
 
-        // test: ledger entry is produced (Mint) with the correct minted amount
+        assert!(ledger_entry.is_some());
+        let ledger_entry = ledger_entry.unwrap();
+        assert_eq!(ledger_entry.operation, DbLedgerOperation::Mint);
+        assert_eq!(ledger_entry.rune_id, rune_id.to_string());
+        // ledger entry is minted with the correct amount
+        assert_eq!(ledger_entry.amount, Some(db_rune.terms_amount.unwrap()));
+
         // test: minted amount is added to the input runes (`cache.input_runes`)
+        assert!(cache.input_runes.contains_key(&rune_id));
     }
 
     #[test]
     fn does_not_mint_fully_minted_rune() {
-        // test: ledger entry is None
+        let location = TransactionLocation::dummy();
+        let mut cache = TransactionCache::empty(location.clone());
+        let etching = Etching {
+            divisibility: Some(2),
+            premine: Some(1000),
+            rune: Some(Rune::reserved(location.block_height, location.tx_index)),
+            spacers: None,
+            symbol: Some('x'),
+            terms: Some(Terms {
+                amount: Some(1000),
+                cap: Some(1000),
+                height: (None, None),
+                offset: (None, None),
+            }),
+            turbo: true,
+        };
+        let (rune_id, db_rune, _db_ledger_entry) = cache.apply_etching(&etching, 1);
+        let _ = cache.apply_mint(&rune_id, 0, &db_rune, &Context::empty());
+        // Note: it seems like premine is ignored? Would assume the above mint wouldn't be needed
+        let ledger_entry = cache.apply_mint(&rune_id, 1000, &db_rune, &Context::empty());
+        assert!(ledger_entry.is_none());
     }
 
+    // ******************* unfinished below ****************
+    #[test]
     fn burns_cenotaph_mint() {
-        //
+        let location = TransactionLocation::dummy();
+        let mut cache = TransactionCache::empty(location.clone());
+
+        // Create a cenotaph rune
+        let rune = Rune::reserved(location.block_height, location.tx_index);
+        let number = 2;
+
+        let (rune_id, db_rune, _db_ledger_entry) = cache.apply_cenotaph_etching(&rune, number);
+        let ledger_entry = cache.apply_cenotaph_mint(&rune_id, 0, &db_rune, &Context::empty());
+        assert!(ledger_entry.is_some());
+        assert_eq!(ledger_entry.unwrap().operation, DbLedgerOperation::Burn);
     }
 
+    #[test]
     fn moves_runes_with_edict() {
-        //
-    }
+        let location = TransactionLocation::dummy();
+        let location2 = TransactionLocation::dummy();
+        let mut cache = TransactionCache::empty(location.clone());
+        let db_rune = &DbRune::factory();
+        let rune_id = &db_rune.rune_id();
 
+        let ledger_entry = cache.apply_mint(&rune_id, 0, &db_rune, &Context::empty());
+
+        assert!(ledger_entry.is_some());
+        let edict = Edict {
+            id: rune_id.clone(),
+            amount: 1000,
+            output: location2.tx_index,
+        };
+
+        let ledger_entry = cache.apply_edict(&edict, &Context::empty());
+        assert_eq!(
+            ledger_entry.first().unwrap().operation,
+            DbLedgerOperation::Send
+        );
+        assert_eq!(
+            ledger_entry.last().unwrap().operation,
+            DbLedgerOperation::Receive
+        );
+    }
+    #[test]
     fn allocates_remaining_runes() {
         //
     }
