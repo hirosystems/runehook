@@ -17,6 +17,7 @@ type DbRune = {
   divisibility: number;
   premine: string;
   symbol: string;
+  cenotaph: boolean;
   terms_amount: string | null;
   terms_cap: string | null;
   terms_height_start: string | null;
