@@ -14,6 +14,7 @@ export function parseEtchingResponse(rune: DbRuneWithChainTip): EtchingResponse 
   const total_burns = rune.total_burns == null ? '0' : rune.total_burns;
   if (
     rune.terms_amount == null ||
+    rune.cenotaph ||
     (rune.terms_cap && BigNumber(total_mints).gte(rune.terms_cap)) ||
     (rune.terms_height_start && BigNumber(rune.chain_tip).lt(rune.terms_height_start)) ||
     (rune.terms_height_end && BigNumber(rune.chain_tip).gt(rune.terms_height_end)) ||
