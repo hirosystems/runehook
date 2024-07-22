@@ -5,7 +5,7 @@ import { IncomingMessage, Server, ServerResponse } from 'http';
 import { TypeBoxTypeProvider } from '@fastify/type-provider-typebox';
 import { buildApiServer } from '../src/api/init';
 import { Rune } from '../src/api/schemas';
-import { DbRune } from '../src/pg/types';
+import { DbLedgerEntry, DbRune } from '../src/pg/types';
 
 export type TestFastifyServer = FastifyInstance<
   Server,
@@ -54,9 +54,40 @@ export async function dropDatabase(db: PgStore) {
   });
 }
 
+export async function insertDbEntry(
+  db: PgStore,
+  payload: DbLedgerEntry,
+  event_index: number
+): Promise<void> {
+  await db.sqlWriteTransaction(async sql => {
+    const {
+      rune_id,
+      block_hash,
+      block_height,
+      tx_index,
+      tx_id,
+      output,
+      address,
+      receiver_address,
+      amount,
+      operation,
+    } = payload;
+
+    await sql`
+      INSERT INTO ledger (
+        rune_id, block_hash, block_height, tx_index, tx_id, output,
+        address, receiver_address, amount, operation, timestamp, event_index
+      )
+      VALUES (
+
+      ${rune_id}, ${block_hash}, ${block_height}, ${tx_index}, ${tx_id}, ${output}, ${address}, ${receiver_address}, ${amount}, ${operation}, 0, ${event_index}
+      )
+    `;
+  });
+}
+
 export async function insertRune(db: PgStore, payload: DbRune): Promise<void> {
   await db.sqlWriteTransaction(async sql => {
-
     const {
       id,
       name,
@@ -74,9 +105,6 @@ export async function insertRune(db: PgStore, payload: DbRune): Promise<void> {
       terms_height_end,
     } = payload;
 
-    // Insert a new rune into the 'runes' table
-    // Ensure the column names and types match your database schema
-
     // INSERT INTO runes (
     //     id, number, name, spaced_name, block_hash, block_height, tx_index, tx_id, symbol, terms_amount,
     //     terms_cap, terms_height_start, terms_height_end, timestamp
@@ -91,11 +119,9 @@ export async function insertRune(db: PgStore, payload: DbRune): Promise<void> {
       )
       VALUES (
 
-      ${id}, ${number}, ${sql(name)}, ${sql(spaced_name)}, ${sql(block_hash)}, ${sql(
-      block_height
-    )}, ${tx_index}, ${sql(tx_id)}, ${sql(symbol)}, ${cenotaph}, ${sql(terms_amount || '')}, ${sql(
-      terms_cap || ''
-    )}, ${terms_height_start}, ${terms_height_end}, NOW()
+      ${id}, ${number}, ${name}, ${spaced_name}, ${block_hash}, ${block_height}, ${tx_index}, ${tx_id}, ${symbol}, ${cenotaph}, ${
+      terms_amount || ''
+    }, ${terms_cap || ''}, ${terms_height_start}, ${terms_height_end}, 0
       )
     `;
   });
