@@ -80,7 +80,7 @@ function toSpacedName(name: string | null): string | null {
 export function sampleRune(id: string, name?: string): DbRune {
   return {
     id: '1:1',
-    name: name || 'SAMPLE RUNE NAME',
+    name: name || 'SAMPLERUNENAME',
     spaced_name: (name && toSpacedName(name)) || 'SAMPLE•RUNE•NAME',
     number: 1,
     block_hash: '0000000000000000000320283a032748cef8227873ff4872689bf23f1cda83a5',
@@ -107,7 +107,7 @@ export function sampleRune(id: string, name?: string): DbRune {
   };
 }
 
-export async function insertDbEntry(
+export async function insertDbLedgerEntry(
   db: PgStore,
   payload: DbLedgerEntry,
   event_index: number
@@ -139,7 +139,7 @@ export async function insertDbEntry(
   });
 }
 
-export async function insertSupply(
+export async function insertSupplyChange(
   db: PgStore,
   rune_id: string,
   block_height: number,
