@@ -53,6 +53,59 @@ export async function dropDatabase(db: PgStore) {
     `;
   });
 }
+export function sampleLedgerEntry(rune_id: string, block_height?: string): DbLedgerEntry {
+  return {
+    rune_id: '1:1',
+    block_hash: '0000000000000000000320283a032748cef8227873ff4872689bf23f1cda83a5',
+    block_height: block_height || '840000',
+    tx_index: 0,
+    tx_id: '2bb85f4b004be6da54f766c17c1e855187327112c231ef2ff35ebad0ea67c69e',
+    output: 0,
+    address: '0',
+    receiver_address: '0',
+    amount: '0',
+    operation: 'etching',
+    timestamp: 0,
+  };
+}
+
+function toSpacedName(name: string | null): string | null {
+  if (name === null) {
+    return null;
+  }
+  // should take "Some name" and make it "Some•name"
+  const words = name.split(' ');
+  return words.join('•');
+}
+export function sampleRune(id: string, name?: string): DbRune {
+  return {
+    id: '1:1',
+    name: name || 'Sample Rune Name',
+    spaced_name: (name && toSpacedName(name)) || 'Sample•Rune•Name',
+    number: 1,
+    block_hash: '0000000000000000000320283a032748cef8227873ff4872689bf23f1cda83a5',
+    block_height: '840000',
+    tx_index: 1,
+    tx_id: '2bb85f4b004be6da54f766c17c1e855187327112c231ef2ff35ebad0ea67c69e',
+    divisibility: 2,
+    premine: '1000',
+    symbol: 'ᚠ',
+    cenotaph: true,
+    terms_amount: '100',
+    terms_cap: '5000000',
+    terms_height_start: null,
+    terms_height_end: null,
+    terms_offset_start: null,
+    terms_offset_end: null,
+    turbo: false,
+    minted: '1000',
+    total_mints: '1500',
+    burned: '500',
+    total_burns: '750',
+    total_operations: '1',
+    timestamp: 1713571767,
+  };
+}
 
 export async function insertDbEntry(
   db: PgStore,
@@ -86,6 +139,32 @@ export async function insertDbEntry(
   });
 }
 
+export async function insertSupply(
+  db: PgStore,
+  rune_id: string,
+  block_height: number,
+  minted?: number,
+  total_mints?: number,
+  total_operations?: number
+): Promise<void> {
+  await db.sqlWriteTransaction(async sql => {
+    const burned = 0;
+    const total_burned = 0;
+
+    await sql`
+      INSERT INTO supply_changes (
+        rune_id, block_height, minted, total_mints, burned, total_burns, total_operations
+      )
+      VALUES (
+
+      ${rune_id}, ${block_height}, ${minted || 0}, ${
+      total_mints || 0
+    }, ${burned}, ${total_burned}, ${total_operations || 0}
+      )
+    `;
+  });
+}
+
 export async function insertRune(db: PgStore, payload: DbRune): Promise<void> {
   await db.sqlWriteTransaction(async sql => {
     const {
@@ -105,13 +184,6 @@ export async function insertRune(db: PgStore, payload: DbRune): Promise<void> {
       terms_height_end,
     } = payload;
 
-    // INSERT INTO runes (
-    //     id, number, name, spaced_name, block_hash, block_height, tx_index, tx_id, symbol, terms_amount,
-    //     terms_cap, terms_height_start, terms_height_end, timestamp
-    // )
-    // '1:0', 0, 'UNCOMMONGOODS', 'UNCOMMON•GOODS',
-    // '0000000000000000000320283a032748cef8227873ff4872689bf23f1cda83a5', 840000, 0, '', '⧉', 1,
-    // '340282366920938463463374607431768211455', 840000, 1050000, 0
     await sql`
       INSERT INTO runes (
         id, number, name, spaced_name, block_hash, block_height, tx_index, tx_id, symbol, cenotaph,

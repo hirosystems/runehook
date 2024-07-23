@@ -307,6 +307,7 @@ const RuneDetailResponseSchema = Type.Object({
     {
       id: RuneIdResponseSchema,
       name: RuneNameResponseSchema,
+      // number: RuneNumberResponseSchema,
       spaced_name: RuneSpacedNameResponseSchema,
     },
     { title: 'Rune detail', description: 'Details of the rune affected by this activity' }
