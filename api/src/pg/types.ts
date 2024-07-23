@@ -53,6 +53,7 @@ export type DbLedgerEntry = {
 
 export type DbItemWithRune<T> = T & {
   name: string;
+  number: number;
   spaced_name: string;
   divisibility: number;
   total_operations: number;
