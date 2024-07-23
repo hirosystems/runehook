@@ -14,7 +14,10 @@
     "generate:vercel": "npm run generate:git-info && npm run generate:openapi && npm run generate:docs",
     "lint:eslint": "eslint . --ext .ts,.tsx -f unix",
     "lint:prettier": "prettier --check src/**/*.ts tests/**/*.ts",
-    "lint:unused-exports": "ts-unused-exports tsconfig.json --showLineNumber --excludePathsFromReport=util/*"
+    "lint:unused-exports": "ts-unused-exports tsconfig.json --showLineNumber --excludePathsFromReport=util/*",
+    "testenv:run": "docker-compose -f ../docker/docker-compose.dev.postgres.yml up",
+    "testenv:stop": "docker-compose -f ../docker/docker-compose.dev.postgres.yml down -v -t 0",
+    "testenv:logs": "docker-compose -f ../docker/docker-compose.dev.postgres.yml logs -t -f"
   },
   "author": "Hiro Systems PBC <engineering@hiro.so> (https://hiro.so)",
   "license": "Apache 2.0",
