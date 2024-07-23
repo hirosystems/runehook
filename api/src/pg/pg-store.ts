@@ -146,7 +146,7 @@ export class PgStore extends BasePgStore {
     const results = await this.sql<DbCountedQueryResult<DbItemWithRune<DbLedgerEntry>>[]>`
       WITH ${cte ? cte : this.sql`none AS (SELECT NULL)`},
       results AS (
-        SELECT l.*, r.name, r.spaced_name, r.divisibility, ${count} AS total
+        SELECT l.*, r.name, r.number, r.spaced_name, r.divisibility, ${count} AS total
         FROM ledger AS l
         INNER JOIN runes AS r ON r.id = l.rune_id
         WHERE ${filter}
@@ -222,7 +222,7 @@ export class PgStore extends BasePgStore {
   ): Promise<DbPaginatedResult<DbItemWithRune<DbBalance>>> {
     const results = await this.sql<DbCountedQueryResult<DbItemWithRune<DbBalance>>[]>`
       WITH grouped AS (
-        SELECT DISTINCT ON (b.address) b.address, b.balance, b.total_operations, b.rune_id, r.name,
+        SELECT DISTINCT ON (b.address) b.address, b.balance, b.total_operations, b.rune_id, r.name, r.number
           r.spaced_name, r.divisibility, COUNT(*) OVER() AS total
         FROM balance_changes AS b
         INNER JOIN runes AS r ON r.id = b.rune_id
@@ -245,7 +245,7 @@ export class PgStore extends BasePgStore {
   ): Promise<DbItemWithRune<DbBalance> | undefined> {
     const results = await this.sql<DbItemWithRune<DbBalance>[]>`
       SELECT b.rune_id, b.address, b.balance, b.total_operations, r.name,
-        r.spaced_name, r.divisibility, COUNT(*) OVER() AS total
+        r.number, r.spaced_name, r.divisibility, COUNT(*) OVER() AS total
       FROM balance_changes AS b
       INNER JOIN runes AS r ON r.id = b.rune_id
       WHERE ${runeFilter(this.sql, id, 'r')} AND address = ${address}
@@ -263,7 +263,7 @@ export class PgStore extends BasePgStore {
     const results = await this.sql<DbCountedQueryResult<DbItemWithRune<DbBalance>>[]>`
       WITH grouped AS (
         SELECT DISTINCT ON (b.rune_id) b.address, b.balance, b.total_operations, b.rune_id, r.name,
-          r.spaced_name, r.divisibility, COUNT(*) OVER() AS total
+          r.number, r.spaced_name, r.divisibility, COUNT(*) OVER() AS total
         FROM balance_changes AS b
         INNER JOIN runes AS r ON r.id = b.rune_id
         WHERE address = ${address}
