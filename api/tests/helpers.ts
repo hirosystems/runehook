@@ -80,8 +80,8 @@ function toSpacedName(name: string | null): string | null {
 export function sampleRune(id: string, name?: string): DbRune {
   return {
     id: '1:1',
-    name: name || 'Sample Rune Name',
-    spaced_name: (name && toSpacedName(name)) || 'Sample•Rune•Name',
+    name: name || 'SAMPLE RUNE NAME',
+    spaced_name: (name && toSpacedName(name)) || 'SAMPLE•RUNE•NAME',
     number: 1,
     block_hash: '0000000000000000000320283a032748cef8227873ff4872689bf23f1cda83a5',
     block_height: '840000',
