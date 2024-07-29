@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS runes (
     terms_offset_start      NUMERIC,
     terms_offset_end        NUMERIC,
     turbo                   BOOLEAN NOT NULL DEFAULT FALSE,
+    cenotaph                BOOLEAN NOT NULL DEFAULT FALSE,
     timestamp               BIGINT NOT NULL
 );
 

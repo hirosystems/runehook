@@ -1,6 +1,6 @@
 use std::{collections::HashMap, process, str::FromStr};
 
-use cache::transaction_cache::InputRuneBalance;
+use cache::input_rune_balance::InputRuneBalance;
 use chainhook_sdk::utils::Context;
 use models::{
     db_balance_change::DbBalanceChange, db_ledger_entry::DbLedgerEntry, db_rune::DbRune,
@@ -21,6 +21,22 @@ pub mod models;
 pub mod types;
 
 embed_migrations!("migrations");
+
+async fn pg_run_migrations(pg_client: &mut Client, ctx: &Context) {
+    try_info!(ctx, "Running postgres migrations");
+    match migrations::runner()
+        .set_migration_table_name("pgmigrations")
+        .run_async(pg_client)
+        .await
+    {
+        Ok(_) => {}
+        Err(e) => {
+            try_error!(ctx, "Error running pg migrations: {}", e.to_string());
+            process::exit(1);
+        }
+    };
+    try_info!(ctx, "Postgres migrations complete");
+}
 
 pub async fn pg_connect(config: &Config, run_migrations: bool, ctx: &Context) -> Client {
     let mut pg_config = tokio_postgres::Config::new();
@@ -58,38 +74,10 @@ pub async fn pg_connect(config: &Config, run_migrations: bool, ctx: &Context) ->
             }
         }
     }
-
     if run_migrations {
-        try_info!(ctx, "Running postgres migrations");
-        match migrations::runner()
-            .set_migration_table_name("pgmigrations")
-            .run_async(&mut pg_client)
-            .await
-        {
-            Ok(_) => {}
-            Err(e) => {
-                try_error!(ctx, "Error running pg migrations: {}", e.to_string());
-                process::exit(1);
-            }
-        };
-        try_info!(ctx, "Postgres migrations complete");
+        pg_run_migrations(&mut pg_client, ctx).await;
     }
-
     pg_client
-}
-
-#[cfg(test)]
-pub async fn pg_test_client() -> Client {
-    let (client, connection) =
-        tokio_postgres::connect("host=localhost user=postgres password=postgres", NoTls)
-            .await
-            .unwrap();
-    tokio::spawn(async move {
-        if let Err(e) = connection.await {
-            eprintln!("test connection error: {}", e);
-        }
-    });
-    client
 }
 
 pub async fn pg_insert_runes(
@@ -531,4 +519,54 @@ pub async fn pg_get_input_rune_balances(
         }
     }
     results
+}
+
+#[cfg(test)]
+pub async fn pg_test_client(run_migrations: bool, ctx: &Context) -> Client {
+    let (mut client, connection) =
+        tokio_postgres::connect("host=localhost user=postgres password=postgres", NoTls)
+            .await
+            .unwrap();
+    tokio::spawn(async move {
+        if let Err(e) = connection.await {
+            eprintln!("test connection error: {}", e);
+        }
+    });
+    if run_migrations {
+        pg_run_migrations(&mut client, ctx).await;
+    }
+    client
+}
+
+#[cfg(test)]
+pub async fn pg_test_roll_back_migrations(pg_client: &mut Client, ctx: &Context) {
+    match pg_client
+        .batch_execute(
+            "
+            DO $$ DECLARE
+                r RECORD;
+            BEGIN
+                FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = current_schema()) LOOP
+                    EXECUTE 'DROP TABLE IF EXISTS ' || quote_ident(r.tablename) || ' CASCADE';
+                END LOOP;
+            END $$;
+            DO $$ DECLARE
+                r RECORD;
+            BEGIN
+                FOR r IN (SELECT typname FROM pg_type WHERE typtype = 'e' AND typnamespace = (SELECT oid FROM pg_namespace WHERE nspname = current_schema())) LOOP
+                    EXECUTE 'DROP TYPE IF EXISTS ' || quote_ident(r.typname) || ' CASCADE';
+                END LOOP;
+            END $$;",
+        )
+        .await {
+            Ok(rows) => rows,
+            Err(e) => {
+                try_error!(
+                    ctx,
+                    "error rolling back test migrations: {}",
+                    e.to_string()
+                );
+                process::exit(1);
+            }
+        };
 }

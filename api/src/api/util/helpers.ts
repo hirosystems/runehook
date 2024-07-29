@@ -14,6 +14,7 @@ export function parseEtchingResponse(rune: DbRuneWithChainTip): EtchingResponse 
   const total_burns = rune.total_burns == null ? '0' : rune.total_burns;
   if (
     rune.terms_amount == null ||
+    rune.cenotaph ||
     (rune.terms_cap && BigNumber(total_mints).gte(rune.terms_cap)) ||
     (rune.terms_height_start && BigNumber(rune.chain_tip).lt(rune.terms_height_start)) ||
     (rune.terms_height_end && BigNumber(rune.chain_tip).gt(rune.terms_height_end)) ||
@@ -67,6 +68,7 @@ export function parseActivityResponse(entry: DbItemWithRune<DbLedgerEntry>): Act
   return {
     rune: {
       id: entry.rune_id,
+      number: entry.number,
       name: entry.name,
       spaced_name: entry.spaced_name,
     },
@@ -90,6 +92,7 @@ export function parseBalanceResponse(item: DbItemWithRune<DbBalance>): BalanceRe
   return {
     rune: {
       id: item.rune_id,
+      number: item.number,
       name: item.name,
       spaced_name: item.spaced_name,
     },

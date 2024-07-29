@@ -16,6 +16,27 @@
         "TS_NODE_SKIP_IGNORE": "true"
       },
       "killBehavior": "polite"
-    }
+    },
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Jest",
+      "program": "${workspaceFolder}/api/node_modules/jest/bin/jest",
+      "cwd": "${workspaceFolder}/api/",
+      "args": [
+        "--testTimeout=3600000",
+        "--runInBand",
+        "--no-cache",
+      ],
+      "outputCapture": "std",
+      "console": "integratedTerminal",
+      "preLaunchTask": "npm: testenv:run",
+      "postDebugTask": "npm: testenv:stop",
+      "env": {
+        "PGHOST": "localhost",
+        "PGUSER": "postgres",
+        "PGPASSWORD": "postgres",
+      },
+    },
   ]
 }

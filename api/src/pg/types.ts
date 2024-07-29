@@ -5,7 +5,7 @@ export type DbPaginatedResult<T> = {
 
 export type DbCountedQueryResult<T> = T & { total: number };
 
-type DbRune = {
+export type DbRune = {
   id: string;
   number: number;
   name: string;
@@ -17,6 +17,7 @@ type DbRune = {
   divisibility: number;
   premine: string;
   symbol: string;
+  cenotaph: boolean;
   terms_amount: string | null;
   terms_cap: string | null;
   terms_height_start: string | null;
@@ -52,6 +53,7 @@ export type DbLedgerEntry = {
 
 export type DbItemWithRune<T> = T & {
   name: string;
+  number: number;
   spaced_name: string;
   divisibility: number;
   total_operations: number;

@@ -61,7 +61,9 @@ const RuneNumberSchema = Type.RegEx(/^[0-9]+$/, { title: 'Rune number' });
 export const RuneNumberSchemaCType = TypeCompiler.Compile(RuneNumberSchema);
 const RuneNameSchema = Type.RegEx(/^[A-Z]+$/, { title: 'Rune name' });
 export const RuneNameSchemaCType = TypeCompiler.Compile(RuneNameSchema);
-const RuneSpacedNameSchema = Type.RegEx(/^[A-Z](•[A-Z]+)+$/, { title: 'Rune name with spacers' });
+const RuneSpacedNameSchema = Type.RegEx(/^[A-Za-z]+(•[A-Za-z]+)+$/, {
+  title: 'Rune name with spacers',
+});
 export const RuneSpacedNameSchemaCType = TypeCompiler.Compile(RuneSpacedNameSchema);
 
 export const RuneSchema = Type.Union([
@@ -306,6 +308,7 @@ const RuneDetailResponseSchema = Type.Object({
   rune: Type.Object(
     {
       id: RuneIdResponseSchema,
+      number: RuneNumberResponseSchema,
       name: RuneNameResponseSchema,
       spaced_name: RuneSpacedNameResponseSchema,
     },
