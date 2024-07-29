@@ -1,3 +1,10 @@
+## [0.3.0-beta.5](https://github.com/hirosystems/runehook/compare/v0.3.0-beta.4...v0.3.0-beta.5) (2024-07-29)
+
+
+### Features
+
+* number field in rune response ([#35](https://github.com/hirosystems/runehook/issues/35)) ([4485057](https://github.com/hirosystems/runehook/commit/4485057825dcf22bd4bb4bd667da0d9d2886e1ab))
+
 ## [0.3.0-beta.4](https://github.com/hirosystems/runehook/compare/v0.3.0-beta.3...v0.3.0-beta.4) (2024-07-08)
 
 
