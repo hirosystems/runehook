@@ -2,7 +2,7 @@ CREATE TABLE IF NOT EXISTS runes (
     id                      TEXT NOT NULL PRIMARY KEY,
     number                  BIGINT NOT NULL UNIQUE,
     name                    TEXT NOT NULL UNIQUE,
-    spaced_name             TEXT NOT NULL,
+    spaced_name             TEXT NOT NULL UNIQUE,
     block_hash              TEXT NOT NULL,
     block_height            NUMERIC NOT NULL,
     tx_index                BIGINT NOT NULL,
@@ -17,14 +17,11 @@ CREATE TABLE IF NOT EXISTS runes (
     terms_offset_start      NUMERIC,
     terms_offset_end        NUMERIC,
     turbo                   BOOLEAN NOT NULL DEFAULT FALSE,
-    minted                  NUMERIC NOT NULL DEFAULT 0,
-    total_mints             NUMERIC NOT NULL DEFAULT 0,
-    burned                  NUMERIC NOT NULL DEFAULT 0,
-    total_burns             NUMERIC NOT NULL DEFAULT 0,
-    total_operations        NUMERIC NOT NULL DEFAULT 0,
+    cenotaph                BOOLEAN NOT NULL DEFAULT FALSE,
     timestamp               BIGINT NOT NULL
 );
-CREATE INDEX runes_block_height_tx_index_index ON runes (block_height, tx_index);
+
+CREATE INDEX runes_block_height_tx_index_index ON runes (block_height DESC, tx_index DESC);
 
 -- Insert default 'UNCOMMON•GOODS'
 INSERT INTO runes (

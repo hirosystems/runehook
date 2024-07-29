@@ -3,7 +3,7 @@ use chainhook_sdk::{
     utils::Context,
 };
 
-use crate::config::Config;
+use crate::{config::Config, try_error};
 
 fn get_client(config: &Config, ctx: &Context) -> Client {
     loop {
@@ -16,11 +16,7 @@ fn get_client(config: &Config, ctx: &Context) -> Client {
                 return con;
             }
             Err(e) => {
-                error!(
-                    ctx.expect_logger(),
-                    "bitcoind unable to get client: {}",
-                    e.to_string()
-                );
+                try_error!(ctx, "bitcoind unable to get client: {}", e.to_string());
                 std::thread::sleep(std::time::Duration::from_secs(1));
             }
         }
@@ -35,8 +31,8 @@ pub fn bitcoind_get_block_height(config: &Config, ctx: &Context) -> u64 {
                 return result.blocks;
             }
             Err(e) => {
-                error!(
-                    ctx.expect_logger(),
+                try_error!(
+                    ctx,
                     "bitcoind unable to get block height: {}",
                     e.to_string()
                 );

@@ -64,7 +64,7 @@ pub fn pg_numeric_bytes_to_u128(raw: &[u8]) -> u128 {
     result
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PgNumericU128(pub u128);
 
 impl ToSql for PgNumericU128 {
@@ -109,6 +109,7 @@ impl AddAssign<u128> for PgNumericU128 {
 
 #[cfg(test)]
 mod test {
+    use chainhook_sdk::utils::Context;
     use test_case::test_case;
 
     use crate::db::pg_test_client;
@@ -120,7 +121,7 @@ mod test {
     #[test_case(0; "zero")]
     #[tokio::test]
     async fn test_u128_to_postgres(val: u128) {
-        let mut client = pg_test_client().await;
+        let mut client = pg_test_client(false, &Context::empty()).await;
         let value = PgNumericU128(val);
         let tx = client.transaction().await.unwrap();
         let _ = tx.query("CREATE TABLE test (value NUMERIC)", &[]).await;

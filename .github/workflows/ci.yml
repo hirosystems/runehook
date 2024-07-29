@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - beta
       - develop
     paths-ignore:
       - "**/CHANGELOG.md"
@@ -141,10 +142,14 @@ jobs:
           docker-compose -f docker/docker-compose.dev.postgres.yml up -d
           docker-compose -f docker/docker-compose.dev.postgres.yml logs -t -f --no-color &> docker-compose-logs.txt &
 
-      - name: Cargo test
+      - name: Update Rust
         run: |
           rustup update
-          RUST_BACKTRACE=1 cargo test --all -- --test-threads=1
+
+      - name: Run tests
+        run: |
+          cargo install --force cargo-tarpaulin
+          cargo tarpaulin --out lcov -- --test-threads=1
 
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v4
@@ -248,6 +253,13 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Checkout tag
+        if: needs.semantic-release.outputs.new_release_version != ''
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: v${{ needs.semantic-release.outputs.new_release_version }}
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -277,4 +289,4 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           # Only push if (there's a new release on main branch, or if building a non-main branch) and (Only run on non-PR events or only PRs that aren't from forks)
-          push: ${{ (github.ref != 'refs/heads/master' || needs.semantic-release.outputs.new_release_version != '') && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+          push: ${{ (github.ref != 'refs/heads/main' || needs.semantic-release.outputs.new_release_version != '') && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}

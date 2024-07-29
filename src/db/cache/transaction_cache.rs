@@ -1,130 +1,77 @@
+use bitcoin::ScriptBuf;
+use chainhook_sdk::utils::Context;
+use maplit::hashmap;
+use ordinals::{Cenotaph, Edict, Etching, Rune, RuneId};
 use std::{
     collections::{HashMap, VecDeque},
     vec,
 };
 
-use bitcoin::{Address, Network, ScriptBuf};
-use chainhook_sdk::{types::bitcoin::TxOut, utils::Context};
-use ordinals::{Cenotaph, Edict, Etching, Rune, RuneId, Runestone};
-
-use crate::db::{
-    models::{
-        db_ledger_entry::DbLedgerEntry, db_ledger_operation::DbLedgerOperation, db_rune::DbRune,
+use crate::{
+    db::{
+        cache::utils::{is_rune_mintable, new_sequential_ledger_entry},
+        models::{
+            db_ledger_entry::DbLedgerEntry, db_ledger_operation::DbLedgerOperation, db_rune::DbRune,
+        },
     },
-    types::pg_numeric_u128::PgNumericU128,
+    try_debug, try_info, try_warn,
 };
 
-use super::transaction_location::TransactionLocation;
-
-#[derive(Debug, Clone)]
-pub struct InputRuneBalance {
-    /// Previous owner of this balance. If this is `None`, it means the balance was just minted or premined.
-    pub address: Option<String>,
-    /// How much balance was input to this transaction.
-    pub amount: u128,
-}
+use super::{
+    input_rune_balance::InputRuneBalance, transaction_location::TransactionLocation,
+    utils::move_rune_balance_to_output,
+};
 
 /// Holds cached data relevant to a single transaction during indexing.
 pub struct TransactionCache {
     pub location: TransactionLocation,
-    /// Index of the ledger entry we're inserting next for this transaction.
+    /// Sequential index of the ledger entry we're inserting next for this transaction. Will be increased with each generated
+    /// entry.
     next_event_index: u32,
-    /// Rune etched during this transaction
+    /// Rune etched during this transaction, if any.
     pub etching: Option<DbRune>,
-    /// The output where all unallocated runes will be transferred to.
-    pointer: Option<u32>,
+    /// The output where all unallocated runes will be transferred to. Set to the first eligible output by default but can be
+    /// overridden by a Runestone.
+    pub output_pointer: Option<u32>,
     /// Holds input runes for the current transaction (input to this tx, premined or minted). Balances in the vector are in the
     /// order in which they were input to this transaction.
-    input_runes: HashMap<RuneId, VecDeque<InputRuneBalance>>,
+    pub input_runes: HashMap<RuneId, VecDeque<InputRuneBalance>>,
     /// Non-OP_RETURN outputs in this transaction
     eligible_outputs: HashMap<u32, ScriptBuf>,
-    /// Total outputs contained in this transaction, including OP_RETURN outputs
+    /// Total outputs contained in this transaction, including non-eligible outputs.
     total_outputs: u32,
 }
 
 impl TransactionCache {
     pub fn new(
-        network: Network,
-        block_hash: &String,
-        block_height: u64,
-        tx_index: u32,
-        tx_id: &String,
-        timestamp: u32,
+        location: TransactionLocation,
+        input_runes: HashMap<RuneId, VecDeque<InputRuneBalance>>,
+        eligible_outputs: HashMap<u32, ScriptBuf>,
+        first_eligible_output: Option<u32>,
+        total_outputs: u32,
     ) -> Self {
         TransactionCache {
-            location: TransactionLocation {
-                network,
-                block_hash: block_hash.clone(),
-                block_height,
-                tx_id: tx_id.clone(),
-                tx_index,
-                timestamp,
-            },
+            location,
             next_event_index: 0,
             etching: None,
-            pointer: None,
-            input_runes: HashMap::new(),
-            eligible_outputs: HashMap::new(),
+            output_pointer: first_eligible_output,
+            input_runes,
+            eligible_outputs,
+            total_outputs,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn empty(location: TransactionLocation) -> Self {
+        TransactionCache {
+            location,
+            next_event_index: 0,
+            etching: None,
+            output_pointer: None,
+            input_runes: hashmap! {},
+            eligible_outputs: hashmap! {},
             total_outputs: 0,
         }
-    }
-
-    /// Takes this transaction's input runes and moves them to the unallocated balance for future edict allocation.
-    pub fn set_input_rune_balances(
-        &mut self,
-        input_runes: HashMap<RuneId, VecDeque<InputRuneBalance>>,
-        ctx: &Context,
-    ) {
-        for (rune_id, vec) in input_runes.iter() {
-            for input in vec.iter() {
-                debug!(
-                    ctx.expect_logger(),
-                    "Input {} {:?} ({}) {}", rune_id, input.address, input.amount, self.location
-                );
-            }
-        }
-        self.input_runes = input_runes;
-    }
-
-    /// Takes the runestone's output pointer and keeps a record of eligible outputs to send runes to.
-    pub fn apply_runestone_pointer(
-        &mut self,
-        runestone: &Runestone,
-        tx_outputs: &Vec<TxOut>,
-        ctx: &Context,
-    ) {
-        self.total_outputs = tx_outputs.len() as u32;
-        // Keep a record of non-OP_RETURN outputs.
-        let mut first_eligible_output: Option<u32> = None;
-        for (i, output) in tx_outputs.iter().enumerate() {
-            let Ok(bytes) = hex::decode(&output.script_pubkey[2..]) else {
-                warn!(
-                    ctx.expect_logger(),
-                    "Unable to decode script for output {} {}", i, self.location
-                );
-                continue;
-            };
-            let script = ScriptBuf::from_bytes(bytes);
-            if !script.is_op_return() {
-                if first_eligible_output.is_none() {
-                    first_eligible_output = Some(i as u32);
-                }
-                self.eligible_outputs.insert(i as u32, script);
-            }
-        }
-        if first_eligible_output.is_none() {
-            warn!(
-                ctx.expect_logger(),
-                "No eligible non-OP_RETURN output found {}", self.location
-            );
-        }
-        self.pointer = if runestone.pointer.is_some() {
-            runestone.pointer
-        } else if first_eligible_output.is_some() {
-            first_eligible_output
-        } else {
-            None
-        };
     }
 
     /// Burns the rune balances input to this transaction.
@@ -132,7 +79,7 @@ impl TransactionCache {
         let mut results = vec![];
         for (rune_id, unallocated) in self.input_runes.iter() {
             for balance in unallocated {
-                results.push(new_ledger_entry(
+                results.push(new_sequential_ledger_entry(
                     &self.location,
                     Some(balance.amount),
                     *rune_id,
@@ -153,11 +100,13 @@ impl TransactionCache {
     pub fn allocate_remaining_balances(&mut self, ctx: &Context) -> Vec<DbLedgerEntry> {
         let mut results = vec![];
         for (rune_id, unallocated) in self.input_runes.iter_mut() {
+            #[cfg(not(feature = "release"))]
             for input in unallocated.iter() {
-                debug!(
-                    ctx.expect_logger(),
-                    "Assign unallocated {} {:?} ({}) {}",
+                try_debug!(
+                    ctx,
+                    "Assign unallocated {} to pointer {:?} {:?} ({}) {}",
                     rune_id,
+                    self.output_pointer,
                     input.address,
                     input.amount,
                     self.location
@@ -165,7 +114,7 @@ impl TransactionCache {
             }
             results.extend(move_rune_balance_to_output(
                 &self.location,
-                self.pointer,
+                self.output_pointer,
                 rune_id,
                 unallocated,
                 &self.eligible_outputs,
@@ -196,7 +145,7 @@ impl TransactionCache {
                 },
             );
         }
-        let entry = new_ledger_entry(
+        let entry = new_sequential_ledger_entry(
             &self.location,
             None,
             rune_id,
@@ -218,7 +167,7 @@ impl TransactionCache {
         // If the runestone that produced the cenotaph contained an etching, the etched rune has supply zero and is unmintable.
         let db_rune = DbRune::from_cenotaph_etching(rune, number, &self.location);
         self.etching = Some(db_rune.clone());
-        let entry = new_ledger_entry(
+        let entry = new_sequential_ledger_entry(
             &self.location,
             None,
             rune_id,
@@ -238,17 +187,18 @@ impl TransactionCache {
         db_rune: &DbRune,
         ctx: &Context,
     ) -> Option<DbLedgerEntry> {
-        if !is_valid_mint(db_rune, total_mints, &self.location) {
-            debug!(
-                ctx.expect_logger(),
-                "Invalid mint {} {}", rune_id, self.location
-            );
+        if !is_rune_mintable(db_rune, total_mints, &self.location) {
+            try_debug!(ctx, "Invalid mint {} {}", rune_id, self.location);
             return None;
         }
         let terms_amount = db_rune.terms_amount.unwrap();
-        info!(
-            ctx.expect_logger(),
-            "MINT {} ({}) {} {}", rune_id, db_rune.spaced_name, terms_amount.0, self.location
+        try_info!(
+            ctx,
+            "MINT {} ({}) {} {}",
+            rune_id,
+            db_rune.spaced_name,
+            terms_amount.0,
+            self.location
         );
         self.add_input_runes(
             rune_id,
@@ -257,7 +207,7 @@ impl TransactionCache {
                 amount: terms_amount.0,
             },
         );
-        Some(new_ledger_entry(
+        Some(new_sequential_ledger_entry(
             &self.location,
             Some(terms_amount.0),
             rune_id.clone(),
@@ -276,20 +226,20 @@ impl TransactionCache {
         db_rune: &DbRune,
         ctx: &Context,
     ) -> Option<DbLedgerEntry> {
-        if !is_valid_mint(db_rune, total_mints, &self.location) {
-            debug!(
-                ctx.expect_logger(),
-                "Invalid mint {} {}", rune_id, self.location
-            );
+        if !is_rune_mintable(db_rune, total_mints, &self.location) {
+            try_debug!(ctx, "Invalid mint {} {}", rune_id, self.location);
             return None;
         }
         let terms_amount = db_rune.terms_amount.unwrap();
-        info!(
-            ctx.expect_logger(),
-            "CENOTAPH MINT {} {} {}", db_rune.spaced_name, terms_amount.0, self.location
+        try_info!(
+            ctx,
+            "CENOTAPH MINT {} {} {}",
+            db_rune.spaced_name,
+            terms_amount.0,
+            self.location
         );
         // This entry does not go in the input runes, it gets burned immediately.
-        Some(new_ledger_entry(
+        Some(new_sequential_ledger_entry(
             &self.location,
             Some(terms_amount.0),
             rune_id.clone(),
@@ -305,9 +255,10 @@ impl TransactionCache {
         // Find this rune.
         let rune_id = if edict.id.block == 0 && edict.id.tx == 0 {
             let Some(etching) = self.etching.as_ref() else {
-                warn!(
-                    ctx.expect_logger(),
-                    "Attempted edict for nonexistent rune 0:0 {}", self.location
+                try_warn!(
+                    ctx,
+                    "Attempted edict for nonexistent rune 0:0 {}",
+                    self.location
                 );
                 return vec![];
             };
@@ -317,9 +268,11 @@ impl TransactionCache {
         };
         // Take all the available inputs for the rune we're trying to move.
         let Some(available_inputs) = self.input_runes.get_mut(&rune_id) else {
-            warn!(
-                ctx.expect_logger(),
-                "No unallocated runes {} remain for edict {}", edict.id, self.location
+            try_info!(
+                ctx,
+                "No unallocated runes {} remain for edict {}",
+                edict.id,
+                self.location
             );
             return vec![];
         };
@@ -333,9 +286,11 @@ impl TransactionCache {
         let mut results = vec![];
         if self.eligible_outputs.len() == 0 {
             // No eligible outputs means burn.
-            warn!(
-                ctx.expect_logger(),
-                "No eligible outputs for edict on rune {} {}", edict.id, self.location
+            try_info!(
+                ctx,
+                "No eligible outputs for edict on rune {} {}",
+                edict.id,
+                self.location
             );
             results.extend(move_rune_balance_to_output(
                 &self.location,
@@ -413,9 +368,9 @@ impl TransactionCache {
                     ));
                 }
                 _ => {
-                    warn!(
-                        ctx.expect_logger(),
-                        "Edict for {} attempted move to nonexistent output {} {}",
+                    try_info!(
+                        ctx,
+                        "Edict for {} attempted move to nonexistent output {}, amount will be burnt {}",
                         edict.id,
                         edict.output,
                         self.location
@@ -447,304 +402,231 @@ impl TransactionCache {
     }
 }
 
-/// Determines if a mint is valid depending on the rune's mint terms.
-fn is_valid_mint(db_rune: &DbRune, total_mints: u128, location: &TransactionLocation) -> bool {
-    if db_rune.terms_amount.is_none() {
-        return false;
-    }
-    if let Some(terms_cap) = db_rune.terms_cap {
-        if total_mints >= terms_cap.0 {
-            return false;
-        }
-    }
-    if let Some(terms_height_start) = db_rune.terms_height_start {
-        if location.block_height < terms_height_start.0 {
-            return false;
-        }
-    }
-    if let Some(terms_height_end) = db_rune.terms_height_end {
-        if location.block_height > terms_height_end.0 {
-            return false;
-        }
-    }
-    if let Some(terms_offset_start) = db_rune.terms_offset_start {
-        if location.block_height < db_rune.block_height.0 + terms_offset_start.0 {
-            return false;
-        }
-    }
-    if let Some(terms_offset_end) = db_rune.terms_offset_end {
-        if location.block_height > db_rune.block_height.0 + terms_offset_end.0 {
-            return false;
-        }
-    }
-    true
-}
-
-/// Creates a new ledger entry.
-fn new_ledger_entry(
-    location: &TransactionLocation,
-    amount: Option<u128>,
-    rune_id: RuneId,
-    output: Option<u32>,
-    address: Option<&String>,
-    receiver_address: Option<&String>,
-    operation: DbLedgerOperation,
-    next_event_index: &mut u32,
-) -> DbLedgerEntry {
-    let entry = DbLedgerEntry::from_values(
-        amount,
-        rune_id,
-        &location.block_hash,
-        location.block_height,
-        location.tx_index,
-        *next_event_index,
-        &location.tx_id,
-        output,
-        address,
-        receiver_address,
-        operation,
-        location.timestamp,
-    );
-    *next_event_index += 1;
-    entry
-}
-
-/// Takes `amount` rune balance from `available_inputs` and moves it to `output` by generating the correct ledger entries.
-/// Modifies `available_inputs` to consume balance that is already moved. If `amount` is zero, all remaining balances will be
-/// transferred. If `output` is `None`, the runes will be burnt.
-fn move_rune_balance_to_output(
-    location: &TransactionLocation,
-    output: Option<u32>,
-    rune_id: &RuneId,
-    available_inputs: &mut VecDeque<InputRuneBalance>,
-    eligible_outputs: &HashMap<u32, ScriptBuf>,
-    amount: u128,
-    next_event_index: &mut u32,
-    ctx: &Context,
-) -> Vec<DbLedgerEntry> {
-    let mut results = vec![];
-    // Who is this balance going to?
-    let receiver_address = if let Some(output) = output {
-        match eligible_outputs.get(&output) {
-            Some(script) => match Address::from_script(script, location.network) {
-                Ok(address) => Some(address.to_string()),
-                Err(e) => {
-                    warn!(
-                        ctx.expect_logger(),
-                        "Unable to decode address for output {}, {} {}", output, e, location
-                    );
-                    None
-                }
-            },
-            None => {
-                warn!(
-                    ctx.expect_logger(),
-                    "Attempted move to non-eligible output {} {}", output, location
-                );
-                None
-            }
-        }
-    } else {
-        None
-    };
-    let operation = if receiver_address.is_some() {
-        DbLedgerOperation::Send
-    } else {
-        DbLedgerOperation::Burn
-    };
-
-    // Gather balance to be received by taking it from the available inputs until the amount to move is satisfied.
-    let mut total_sent = 0;
-    let mut senders = vec![];
-    loop {
-        let Some(input_bal) = available_inputs.pop_front() else {
-            // Unallocated balance ran out.
-            break;
-        };
-        let balance_taken = if amount == 0 {
-            input_bal.amount
-        } else {
-            input_bal.amount.min(amount - total_sent)
-        };
-        // Empty sender address means this balance was minted or premined, so we have no "send" entry to add.
-        if let Some(sender_address) = input_bal.address.clone() {
-            senders.push((balance_taken, sender_address));
-        }
-        if balance_taken < input_bal.amount {
-            // There's still some balance left on this input, keep it for later.
-            available_inputs.push_front(InputRuneBalance {
-                address: input_bal.address,
-                amount: input_bal.amount - balance_taken,
-            });
-            break;
-        }
-        total_sent += balance_taken;
-        if total_sent == amount {
-            break;
-        }
-    }
-    // Add the "receive" entry, if applicable.
-    if receiver_address.is_some() && total_sent > 0 {
-        results.push(new_ledger_entry(
-            location,
-            Some(total_sent),
-            *rune_id,
-            output,
-            receiver_address.as_ref(),
-            None,
-            DbLedgerOperation::Receive,
-            next_event_index,
-        ));
-        info!(
-            ctx.expect_logger(),
-            "{} {} ({}) {} {}",
-            DbLedgerOperation::Receive,
-            rune_id,
-            total_sent,
-            receiver_address.as_ref().unwrap(),
-            location
-        );
-    }
-    // Add the "send"/"burn" entries.
-    for (balance_taken, sender_address) in senders.iter() {
-        results.push(new_ledger_entry(
-            location,
-            Some(*balance_taken),
-            *rune_id,
-            output,
-            Some(sender_address),
-            receiver_address.as_ref(),
-            operation.clone(),
-            next_event_index,
-        ));
-        info!(
-            ctx.expect_logger(),
-            "{} {} ({}) {} -> {:?} {}",
-            operation,
-            rune_id,
-            balance_taken,
-            sender_address,
-            receiver_address,
-            location
-        );
-    }
-    results
-}
-
 #[cfg(test)]
 mod test {
-    use std::collections::{HashMap, VecDeque};
-    use test_case::test_case;
+    use std::collections::VecDeque;
 
     use bitcoin::ScriptBuf;
     use chainhook_sdk::utils::Context;
-    use ordinals::RuneId;
+    use maplit::hashmap;
+    use ordinals::{Edict, Etching, Rune, Terms};
 
     use crate::db::{
-        cache::transaction_location::TransactionLocation,
+        cache::{
+            input_rune_balance::InputRuneBalance, transaction_location::TransactionLocation,
+            utils::is_rune_mintable,
+        },
         models::{db_ledger_operation::DbLedgerOperation, db_rune::DbRune},
-        types::{pg_numeric_u128::PgNumericU128, pg_numeric_u64::PgNumericU64},
     };
 
-    use super::{is_valid_mint, move_rune_balance_to_output, InputRuneBalance};
+    use super::TransactionCache;
 
     #[test]
-    fn receives_are_registered_first() {
-        let logger = hiro_system_kit::log::setup_logger();
-        let _guard = hiro_system_kit::log::setup_global_logger(logger.clone());
-        let ctx = Context {
-            logger: Some(logger),
-            tracer: false,
+    fn etches_rune() {
+        let location = TransactionLocation::dummy();
+        let mut cache = TransactionCache::empty(location.clone());
+        let etching = Etching {
+            divisibility: Some(2),
+            premine: Some(1000),
+            rune: Some(Rune::reserved(location.block_height, location.tx_index)),
+            spacers: None,
+            symbol: Some('x'),
+            terms: Some(Terms {
+                amount: Some(1000),
+                cap: None,
+                height: (None, None),
+                offset: (None, None),
+            }),
+            turbo: true,
         };
-        let location = TransactionLocation {
-            network: bitcoin::Network::Bitcoin,
-            block_hash: "00000000000000000002c0cc73626b56fb3ee1ce605b0ce125cc4fb58775a0a9"
-                .to_string(),
-            block_height: 840002,
-            timestamp: 0,
-            tx_id: "37cd29676d626492cd9f20c60bc4f20347af9c0d91b5689ed75c05bb3e2f73ef".to_string(),
-            tx_index: 2936,
-        };
-        let mut available_inputs = VecDeque::new();
-        // An input from a previous tx
-        available_inputs.push_back(InputRuneBalance {
-            address: Some(
-                "bc1p8zxlhgdsq6dmkzk4ammzcx55c3hfrg69ftx0gzlnfwq0wh38prds0nzqwf".to_string(),
-            ),
-            amount: 1000,
-        });
-        // A mint
-        available_inputs.push_back(InputRuneBalance {
-            address: None,
-            amount: 1000,
-        });
-        let mut eligible_outputs = HashMap::new();
-        eligible_outputs.insert(
-            0u32,
-            ScriptBuf::from_hex(
-                "5120388dfba1b0069bbb0ad5eef62c1a94c46e91a3454accf40bf34b80f75e2708db",
-            )
-            .unwrap(),
-        );
-        let mut next_event_index = 0;
-        let results = move_rune_balance_to_output(
-            &location,
-            Some(0),
-            &RuneId::new(840000, 25).unwrap(),
-            &mut available_inputs,
-            &eligible_outputs,
-            0,
-            &mut next_event_index,
-            &ctx,
-        );
+        let (rune_id, db_rune, db_ledger_entry) = cache.apply_etching(&etching, 1);
 
-        let receive = results.get(0).unwrap();
-        assert_eq!(receive.event_index.0, 0u32);
+        assert_eq!(rune_id.block, 840000);
+        assert_eq!(rune_id.tx, 0);
+        assert_eq!(db_rune.id, "840000:0");
+        assert_eq!(db_rune.name, "AAAAAAAAAAAAAAAAZOMJMODBYFG");
+        assert_eq!(db_rune.number.0, 1);
+        assert_eq!(db_ledger_entry.operation, DbLedgerOperation::Etching);
+        assert_eq!(db_ledger_entry.rune_id, "840000:0");
+    }
+
+    #[test]
+    // TODO add cenotaph field to DbRune before filling this in
+    fn etches_cenotaph_rune() {
+        let location = TransactionLocation::dummy();
+        let mut cache = TransactionCache::empty(location.clone());
+
+        // Create a cenotaph rune
+        let rune = Rune::reserved(location.block_height, location.tx_index);
+        let number = 2;
+
+        let (_rune_id, db_rune, db_ledger_entry) = cache.apply_cenotaph_etching(&rune, number);
+
+        // // the etched rune has supply zero and is unmintable.
+        assert_eq!(is_rune_mintable(&db_rune, 0, &location), false);
+        assert_eq!(db_ledger_entry.amount, None);
+        assert_eq!(db_rune.id, "840000:0");
+        assert_eq!(db_ledger_entry.operation, DbLedgerOperation::Etching);
+        assert_eq!(db_ledger_entry.rune_id, "840000:0");
+    }
+
+    #[test]
+    fn mints_rune() {
+        let location = TransactionLocation::dummy();
+        let mut cache = TransactionCache::empty(location.clone());
+        let db_rune = &DbRune::factory();
+        let rune_id = &db_rune.rune_id();
+
+        let ledger_entry = cache.apply_mint(&rune_id, 0, &db_rune, &Context::empty());
+
+        assert!(ledger_entry.is_some());
+        let ledger_entry = ledger_entry.unwrap();
+        assert_eq!(ledger_entry.operation, DbLedgerOperation::Mint);
+        assert_eq!(ledger_entry.rune_id, rune_id.to_string());
+        // ledger entry is minted with the correct amount
+        assert_eq!(ledger_entry.amount, Some(db_rune.terms_amount.unwrap()));
+
+        // minted amount is added to the input runes (`cache.input_runes`)
+        assert!(cache.input_runes.contains_key(&rune_id));
+    }
+
+    #[test]
+    fn does_not_mint_fully_minted_rune() {
+        let location = TransactionLocation::dummy();
+        let mut cache = TransactionCache::empty(location.clone());
+        let etching = Etching {
+            divisibility: Some(2),
+            premine: Some(1000),
+            rune: Some(Rune::reserved(location.block_height, location.tx_index)),
+            spacers: None,
+            symbol: Some('x'),
+            terms: Some(Terms {
+                amount: Some(1000),
+                cap: Some(1000),
+                height: (None, None),
+                offset: (None, None),
+            }),
+            turbo: true,
+        };
+        let (rune_id, db_rune, _db_ledger_entry) = cache.apply_etching(&etching, 1);
+        let ledger_entry = cache.apply_mint(&rune_id, 1000, &db_rune, &Context::empty());
+        assert!(ledger_entry.is_none());
+    }
+
+    #[test]
+    fn burns_cenotaph_mint() {
+        let location = TransactionLocation::dummy();
+        let mut cache = TransactionCache::empty(location.clone());
+
+        let db_rune = DbRune::factory();
+        let rune_id = db_rune.rune_id();
+        let ledger_entry = cache.apply_cenotaph_mint(&rune_id, 0, &db_rune, &Context::empty());
+        assert!(ledger_entry.is_some());
+        let ledger_entry = ledger_entry.unwrap();
+        assert_eq!(ledger_entry.operation, DbLedgerOperation::Burn);
+        assert_eq!(
+            ledger_entry.amount.unwrap().0,
+            db_rune.terms_amount.unwrap().0
+        );
+    }
+
+    #[test]
+    fn moves_runes_with_edict() {
+        let location = TransactionLocation::dummy();
+        let db_rune = &DbRune::factory();
+        let rune_id = &db_rune.rune_id();
+        let mut balances = VecDeque::new();
+        let sender_address =
+            "bc1p3v7r3n4hv63z4s7jkhdzxsay9xem98hxul057w2mwur406zhw8xqrpwp9w".to_string();
+        let receiver_address =
+            "bc1p8zxlhgdsq6dmkzk4ammzcx55c3hfrg69ftx0gzlnfwq0wh38prds0nzqwf".to_string();
+        balances.push_back(InputRuneBalance {
+            address: Some(sender_address.clone()),
+            amount: 1000,
+        });
+        let input_runes = hashmap! {
+            rune_id.clone() => balances
+        };
+        let eligible_outputs = hashmap! {0=> ScriptBuf::from_hex("5120388dfba1b0069bbb0ad5eef62c1a94c46e91a3454accf40bf34b80f75e2708db").unwrap()};
+        let mut cache = TransactionCache::new(location, input_runes, eligible_outputs, Some(0), 1);
+
+        let edict = Edict {
+            id: rune_id.clone(),
+            amount: 1000,
+            output: 0,
+        };
+
+        let ledger_entry = cache.apply_edict(&edict, &Context::empty());
+        assert_eq!(ledger_entry.len(), 2);
+        let receive = ledger_entry.first().unwrap();
         assert_eq!(receive.operation, DbLedgerOperation::Receive);
-        assert_eq!(receive.amount.unwrap().0, 2000u128);
-
-        let send = results.get(1).unwrap();
-        assert_eq!(send.event_index.0, 1u32);
+        assert_eq!(receive.address, Some(receiver_address.clone()));
+        let send = ledger_entry.last().unwrap();
         assert_eq!(send.operation, DbLedgerOperation::Send);
-        assert_eq!(send.amount.unwrap().0, 1000u128);
-
-        assert_eq!(results.len(), 2);
+        assert_eq!(send.address, Some(sender_address.clone()));
+        assert_eq!(send.receiver_address, Some(receiver_address.clone()));
     }
 
-    #[test_case(840000 => false; "early block")]
-    #[test_case(840500 => false; "late block")]
-    #[test_case(840150 => true; "block in window")]
-    #[test_case(840100 => true; "first block")]
-    #[test_case(840200 => true; "last block")]
-    fn mint_block_height_terms_are_validated(block_height: u64) -> bool {
-        let mut rune = DbRune::factory();
-        rune.terms_height_start(Some(PgNumericU64(840100)));
-        rune.terms_height_end(Some(PgNumericU64(840200)));
-        let mut location = TransactionLocation::factory();
-        location.block_height(block_height);
-        is_valid_mint(&rune, 0, &location)
+    #[test]
+    fn allocates_remaining_runes_to_first_eligible_output() {
+        let location = TransactionLocation::dummy();
+        let db_rune = &DbRune::factory();
+        let rune_id = &db_rune.rune_id();
+        let mut balances = VecDeque::new();
+        let sender_address =
+            "bc1p3v7r3n4hv63z4s7jkhdzxsay9xem98hxul057w2mwur406zhw8xqrpwp9w".to_string();
+        let receiver_address =
+            "bc1p8zxlhgdsq6dmkzk4ammzcx55c3hfrg69ftx0gzlnfwq0wh38prds0nzqwf".to_string();
+        balances.push_back(InputRuneBalance {
+            address: Some(sender_address.clone()),
+            amount: 1000,
+        });
+        let input_runes = hashmap! {
+            rune_id.clone() => balances
+        };
+        let eligible_outputs = hashmap! {0=> ScriptBuf::from_hex("5120388dfba1b0069bbb0ad5eef62c1a94c46e91a3454accf40bf34b80f75e2708db").unwrap()};
+        let mut cache = TransactionCache::new(location, input_runes, eligible_outputs, Some(0), 1);
+        let ledger_entry = cache.allocate_remaining_balances(&Context::empty());
+
+        assert_eq!(ledger_entry.len(), 2);
+        let receive = ledger_entry.first().unwrap();
+        assert_eq!(receive.operation, DbLedgerOperation::Receive);
+        assert_eq!(receive.address, Some(receiver_address.clone()));
+        let send = ledger_entry.last().unwrap();
+        assert_eq!(send.operation, DbLedgerOperation::Send);
+        assert_eq!(send.address, Some(sender_address.clone()));
+        assert_eq!(send.receiver_address, Some(receiver_address.clone()));
     }
 
-    #[test_case(840000 => false; "early block")]
-    #[test_case(840500 => false; "late block")]
-    #[test_case(840150 => true; "block in window")]
-    #[test_case(840100 => true; "first block")]
-    #[test_case(840200 => true; "last block")]
-    fn mint_block_offset_terms_are_validated(block_height: u64) -> bool {
-        let mut rune = DbRune::factory();
-        rune.terms_offset_start(Some(PgNumericU64(100)));
-        rune.terms_offset_end(Some(PgNumericU64(200)));
-        let mut location = TransactionLocation::factory();
-        location.block_height(block_height);
-        is_valid_mint(&rune, 0, &location)
-    }
+    #[test]
+    fn allocates_remaining_runes_to_runestone_pointer_output() {
+        let location = TransactionLocation::dummy();
+        let db_rune = &DbRune::factory();
+        let rune_id = &db_rune.rune_id();
+        let mut balances = VecDeque::new();
+        let sender_address =
+            "bc1p3v7r3n4hv63z4s7jkhdzxsay9xem98hxul057w2mwur406zhw8xqrpwp9w".to_string();
+        let receiver_address =
+            "bc1p8zxlhgdsq6dmkzk4ammzcx55c3hfrg69ftx0gzlnfwq0wh38prds0nzqwf".to_string();
+        balances.push_back(InputRuneBalance {
+            address: Some(sender_address.clone()),
+            amount: 1000,
+        });
+        let input_runes = hashmap! {
+            rune_id.clone() => balances
+        };
+        let eligible_outputs = hashmap! {1=> ScriptBuf::from_hex("5120388dfba1b0069bbb0ad5eef62c1a94c46e91a3454accf40bf34b80f75e2708db").unwrap()};
+        let mut cache = TransactionCache::new(location, input_runes, eligible_outputs, Some(0), 2);
+        cache.output_pointer = Some(1);
+        let ledger_entry = cache.allocate_remaining_balances(&Context::empty());
 
-    #[test_case(0 => true; "first mint")]
-    #[test_case(49 => true; "last mint")]
-    #[test_case(50 => false; "out of range")]
-    fn mint_cap_is_validated(cap: u128) -> bool {
-        let mut rune = DbRune::factory();
-        rune.terms_cap(Some(PgNumericU128(50)));
-        is_valid_mint(&rune, cap, &TransactionLocation::factory())
+        assert_eq!(ledger_entry.len(), 2);
+        let receive = ledger_entry.first().unwrap();
+        assert_eq!(receive.operation, DbLedgerOperation::Receive);
+        assert_eq!(receive.address, Some(receiver_address.clone()));
+        let send = ledger_entry.last().unwrap();
+        assert_eq!(send.operation, DbLedgerOperation::Send);
+        assert_eq!(send.address, Some(sender_address.clone()));
+        assert_eq!(send.receiver_address, Some(receiver_address.clone()));
     }
 }

@@ -1,2 +1,0 @@
-[alias]
-runehook-install = "install --path . --locked --force"
