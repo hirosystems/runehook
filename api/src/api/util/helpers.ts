@@ -68,6 +68,7 @@ export function parseActivityResponse(entry: DbItemWithRune<DbLedgerEntry>): Act
   return {
     rune: {
       id: entry.rune_id,
+      number: entry.number,
       name: entry.name,
       spaced_name: entry.spaced_name,
     },
@@ -91,6 +92,7 @@ export function parseBalanceResponse(item: DbItemWithRune<DbBalance>): BalanceRe
   return {
     rune: {
       id: item.rune_id,
+      number: item.number,
       name: item.name,
       spaced_name: item.spaced_name,
     },
