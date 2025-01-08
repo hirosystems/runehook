@@ -2,7 +2,7 @@ use crate::db::types::{
     pg_bigint_u32::PgBigIntU32, pg_numeric_u128::PgNumericU128, pg_numeric_u64::PgNumericU64,
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct DbBalanceChange {
     pub rune_id: String,
     pub block_height: PgNumericU64,

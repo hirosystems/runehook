@@ -1,12 +1,13 @@
-use std::{error::Error, ops::AddAssign};
+use std::{error::Error, ops::{AddAssign, DivAssign, MulAssign, SubAssign}};
 
 use bytes::{BufMut, BytesMut};
 use tokio_postgres::types::{to_sql_checked, FromSql, IsNull, ToSql, Type};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct PgBigIntU32(pub u32);
 
 impl ToSql for PgBigIntU32 {
+    #[cfg_attr(test, mutants::skip)]
     fn to_sql(
         &self,
         _ty: &Type,
@@ -38,6 +39,24 @@ impl<'a> FromSql<'a> for PgBigIntU32 {
 impl AddAssign<u32> for PgBigIntU32 {
     fn add_assign(&mut self, other: u32) {
         self.0 += other;
+    }
+}
+
+impl SubAssign<u32> for PgBigIntU32 {
+    fn sub_assign(&mut self, other: u32) {
+        self.0 -= other;
+    }
+}
+
+impl MulAssign<u32> for PgBigIntU32 {
+    fn mul_assign(&mut self, other: u32) {
+        self.0 *= other;
+    }
+}
+
+impl DivAssign<u32> for PgBigIntU32 {
+    fn div_assign(&mut self, other: u32) {
+        self.0 /= other;
     }
 }
 

@@ -10,7 +10,7 @@ use crate::db::{
 };
 
 /// A row in the `runes` table.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct DbRune {
     pub id: String,
     pub number: PgBigIntU32,

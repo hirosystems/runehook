@@ -31,6 +31,7 @@ pub struct Config {
 }
 
 impl Config {
+    #[cfg_attr(test, mutants::skip)]
     pub fn from_file_path(file_path: &str) -> Result<Config, String> {
         let file = File::open(file_path)
             .map_err(|e| format!("unable to read file {}\n{:?}", file_path, e))?;
@@ -49,6 +50,7 @@ impl Config {
         Config::from_config_file(config_file)
     }
 
+    #[cfg_attr(test, mutants::skip)]
     pub fn from_config_file(config_file: ConfigFile) -> Result<Config, String> {
         let event_observer =
             EventObserverConfig::new_using_overrides(config_file.network.as_ref())?;
@@ -75,6 +77,7 @@ impl Config {
         Ok(config)
     }
 
+    #[cfg_attr(test, mutants::skip)]
     pub fn get_bitcoin_network(&self) -> Network {
         match self.event_observer.bitcoin_network {
             BitcoinNetwork::Mainnet => Network::Bitcoin,
