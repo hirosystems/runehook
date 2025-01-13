@@ -5,6 +5,7 @@ use chainhook_sdk::{
 
 use crate::{config::Config, try_error};
 
+#[cfg_attr(test, mutants::skip)]
 fn get_client(config: &Config, ctx: &Context) -> Client {
     loop {
         let auth = Auth::UserPass(

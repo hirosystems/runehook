@@ -1,7 +1,7 @@
 use std::{
     error::Error,
     io::{Cursor, Read},
-    ops::AddAssign,
+    ops::{AddAssign, DivAssign, MulAssign, SubAssign},
 };
 
 use bytes::{BufMut, BytesMut};
@@ -9,6 +9,7 @@ use num_traits::{ToPrimitive, Zero};
 use tokio_postgres::types::{to_sql_checked, FromSql, IsNull, ToSql, Type};
 
 /// Transforms a u128 value into postgres' `numeric` wire format.
+#[cfg_attr(test, mutants::skip)]
 pub fn u128_into_pg_numeric_bytes(number: u128, out: &mut BytesMut) {
     let mut num = number.clone();
     let mut digits = vec![];
@@ -64,10 +65,11 @@ pub fn pg_numeric_bytes_to_u128(raw: &[u8]) -> u128 {
     result
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct PgNumericU128(pub u128);
 
 impl ToSql for PgNumericU128 {
+    #[cfg_attr(test, mutants::skip)]
     fn to_sql(
         &self,
         _ty: &Type,
@@ -104,6 +106,42 @@ impl AddAssign for PgNumericU128 {
 impl AddAssign<u128> for PgNumericU128 {
     fn add_assign(&mut self, other: u128) {
         self.0 += other;
+    }
+}
+
+impl SubAssign for PgNumericU128 {
+    fn sub_assign(&mut self, other: Self) {
+        self.0 -= other.0;
+    }
+}
+
+impl SubAssign<u128> for PgNumericU128 {
+    fn sub_assign(&mut self, other: u128) {
+        self.0 -= other;
+    }
+}
+
+impl MulAssign for PgNumericU128 {
+    fn mul_assign(&mut self, other: Self) {
+        self.0 *= other.0;
+    }
+}
+
+impl MulAssign<u128> for PgNumericU128 {
+    fn mul_assign(&mut self, other: u128) {
+        self.0 *= other;
+    }
+}
+
+impl DivAssign for PgNumericU128 {
+    fn div_assign(&mut self, other: Self) {
+        self.0 /= other.0;
+    }
+}
+
+impl DivAssign<u128> for PgNumericU128 {
+    fn div_assign(&mut self, other: u128) {
+        self.0 /= other;
     }
 }
 

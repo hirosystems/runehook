@@ -8,7 +8,7 @@ use crate::db::types::{
 use super::db_ledger_operation::DbLedgerOperation;
 
 /// A row in the `ledger` table.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct DbLedgerEntry {
     pub rune_id: String,
     pub block_hash: String,

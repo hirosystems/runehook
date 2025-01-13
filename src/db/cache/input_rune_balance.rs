@@ -1,4 +1,4 @@
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct InputRuneBalance {
     /// Previous owner of this balance. If this is `None`, it means the balance was just minted or premined.
     pub address: Option<String>,
