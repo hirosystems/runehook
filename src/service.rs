@@ -101,6 +101,7 @@ pub async fn start_service(config: &Config, ctx: &Context) -> Result<(), String>
     Ok(())
 }
 
+#[cfg_attr(test, mutants::skip)]
 pub async fn set_up_observer_sidecar_runloop(
     config: &Config,
     ctx: &Context,

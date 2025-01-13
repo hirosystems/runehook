@@ -38,6 +38,7 @@ async fn pg_run_migrations(pg_client: &mut Client, ctx: &Context) {
     try_info!(ctx, "Postgres migrations complete");
 }
 
+#[cfg_attr(test, mutants::skip)]
 pub async fn pg_connect(config: &Config, run_migrations: bool, ctx: &Context) -> Client {
     let mut pg_config = tokio_postgres::Config::new();
     pg_config
@@ -441,6 +442,7 @@ pub async fn pg_get_rune_total_mints(
 /// Retrieves the rune balance for an array of transaction inputs represented by `(vin, tx_id, vout)` where `vin` is the index of
 /// this transaction input, `tx_id` is the transaction ID that produced this input and `vout` is the output index of this previous
 /// tx.
+#[cfg_attr(test, mutants::skip)]
 pub async fn pg_get_input_rune_balances(
     outputs: Vec<(u32, String, u32)>,
     db_tx: &mut Transaction<'_>,

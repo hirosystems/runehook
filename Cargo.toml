@@ -36,6 +36,7 @@ maplit = "1.0.2"
 
 [dev-dependencies]
 test-case = "3.1.0"
+mutants = "0.0.3"
 
 [features]
 debug = ["hiro-system-kit/debug"]

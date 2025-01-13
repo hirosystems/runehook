@@ -4,8 +4,9 @@ use bytes::BytesMut;
 use tokio_postgres::types::{to_sql_checked, FromSql, IsNull, ToSql, Type};
 
 /// A value from the `ledger_operation` enum type.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum DbLedgerOperation {
+    #[default]
     Etching,
     Mint,
     Burn,
@@ -47,6 +48,7 @@ impl std::str::FromStr for DbLedgerOperation {
 }
 
 impl ToSql for DbLedgerOperation {
+    #[cfg_attr(test, mutants::skip)]
     fn to_sql(
         &self,
         _ty: &Type,
